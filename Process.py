@@ -1,7 +1,7 @@
 ################################################################################
 #                                                                              #
 # This section of the script imports libraries, creates directories and        #
-# retrieves the road traffic accidents and road segments data.                 #
+# retrieves the road traffic accidents, road segments and weather data.        #
 #                                                                              #
 ################################################################################
 
@@ -28,7 +28,7 @@ if os.path.isdir(os.path.join(path, 'Figures')) == False:
     os.mkdir('Figures')
 figures = os.path.join(path, 'Figures')
 
-# Retrieve the road traffic accidents and road segments data
+# Retrieve the road traffic accidents, road segments and weather data
 %run -i "Retrieve.py"
 
 ################################################################################
@@ -64,11 +64,12 @@ accidents = accidents.drop(['longitude', 'latitude'], axis=1)
 accidents = accidents.reset_index(drop=True)
 
 # Plot all road traffic accidents in 2019
-#fig, ax = plt.subplots()
-#accidents.plot(ax=ax, color='teal', markersize=0.1)
-#ax.set_axis_off()
-#fig.tight_layout()
-#fig.savefig(os.path.join(figures, 'accidents.pdf'), format='pdf')
+fig, ax = plt.subplots()
+accidents.plot(ax=ax, color='teal', markersize=0.1)
+ax.set_axis_off()
+fig.tight_layout()
+fig.savefig(os.path.join(figures, 'accidents.pdf'), format='pdf')
+plt.close()
 
 ################################################################################
 #                                                                              #
@@ -92,11 +93,12 @@ segments = segments.astype({'segmentid':'int64', 'class':'int64', 'direction':'i
 segments = segments.reset_index(drop=True)
 
 # Plot all road segments
-#fig, ax = plt.subplots()
-#segments.plot(ax=ax, edgecolor='teal', linewidth=0.1)
-#ax.set_axis_off()
-#fig.tight_layout()
-#fig.savefig(os.path.join(figures, 'segments.pdf'), format='pdf')
+fig, ax = plt.subplots()
+segments.plot(ax=ax, edgecolor='teal', linewidth=0.1)
+ax.set_axis_off()
+fig.tight_layout()
+fig.savefig(os.path.join(figures, 'segments.pdf'), format='pdf')
+plt.close()
 
 ################################################################################
 #                                                                              #
@@ -154,8 +156,8 @@ negative.loc[:, 'randomdays'] = np.random.normal(scale=positive.datetime.transfo
 negative.loc[:, 'datetime'] = negative.datetime+negative.randomdays.transform(lambda x: datetime.timedelta(days=x))
 negative = negative.drop('randomdays', axis=1)
 
-# Drop the dates that exceed the year 2019
-negative = negative.loc[negative.datetime.dt.year <= 2019, :]
+# Drop the dates that preceed the year 2012 or exceed the year 2019 in UTC time
+negative = negative.loc[(negative.datetime > pd.Timestamp(2012, 1, 1, 4)) & (negative.datetime < pd.Timestamp(2020, 1, 1, 5)), :]
 
 # Drop duplicated observations
 negative = negative.drop_duplicates()
@@ -180,19 +182,15 @@ df = df.astype({'segmentid':'uint64'})
 #                                                                              #
 ################################################################################
 
+# Define the variable types
+columns = ['Longitude (x)', 'Latitude (y)', 'Climate ID', 'Date/Time', 'Temp (°C)', 'Dew Point Temp (°C)', 'Rel Hum (%)', 'Wind Dir (10s deg)', 'Wind Spd (km/h)', 'Visibility (km)', 'Stn Press (kPa)', 'Weather']
+types = dict(zip(columns, ['float64', 'float64', 'object', 'object', 'float64', 'float64', 'float64', 'float64', 'float64', 'float64', 'float64', 'object']))
+
 # Load the data
-columns = ['Longitude (x)', 'Latitude (y)', 'Climate ID', 'Date/Time', 'Temp (°C)', 'Dew Point Temp (°C)', 'Rel Hum (%)', 'Wind Dir (10s deg)', 'Wind Spd (km/h)', 'Visibility (km)', 'Stn Press (kPa)', 'Hmdx', 'Wind Chill', 'Weather']
-weather = pd.DataFrame(columns=columns)
-for station in ['702FHL8', '702S006', '7020392', '7024100', '7024745', '7025000', '7025250', '7025251', '7026612', '7027280', '7027329']:
-    for year in range(2012, 2019+1):
-        for month in range(1, 12+1):
-            if month < 10:
-                weather = weather.append(pd.read_csv(os.path.join(data, 'en_climate_hourly_QC_'+station+'_0'+str(month)+'-'+str(year)+'_P1H.csv'), usecols=columns), ignore_index=True)
-            else:
-                weather = weather.append(pd.read_csv(os.path.join(data, 'en_climate_hourly_QC_'+station+'_'+str(month)+'-'+str(year)+'_P1H.csv'), usecols=columns), ignore_index=True)
+weather = pd.read_csv(os.path.join(data, 'weather.csv'), dtype=types)
 
 # Rename columns
-weather = weather.rename(columns=dict(zip(weather.columns, ['longitude', 'latitude', 'stationid', 'datetime', 'temperature', 'dewpoint', 'humidity', 'wdirection', 'wspeed', 'visibility', 'pressure', 'humidex', 'wchill', 'risky'])))
+weather = weather.rename(columns=dict(zip(weather.columns, ['longitude', 'latitude', 'stationid', 'datetime', 'temperature', 'dewpoint', 'humidity', 'wdirection', 'wspeed', 'visibility', 'pressure', 'risky'])))
 
 # Redefine the types of the date and time columns
 weather.loc[:, 'datetime'] = pd.to_datetime(weather.datetime, infer_datetime_format=True)
@@ -222,8 +220,10 @@ weather = pd.pivot_table(weather, values=weather.columns[(weather.columns != 'da
 
 # Smooth the weather conditions with an exponential moving average with a halflife of 12 hours
 for c in weather.columns[~weather.columns.get_level_values(0).isin(['risky'])]:
-    weather.loc[:, c] = weather.loc[:, c].interpolate(limit_direction='both')
+    weather.loc[:, c] = weather.loc[:, c].interpolate(limit=12, limit_direction='both')
+    missing = weather.loc[:, c].isna()
     weather.loc[:, c] = weather.loc[:, c].ewm(alpha=1-np.exp(-np.log(2)/12)).mean()
+    weather.loc[missing, c] = np.nan
 
 # Reset the index of the weather data frame
 weather = weather.reset_index()
@@ -245,7 +245,7 @@ for station in range(locations.shape[0]):
 df = pd.merge(df, weather, how='left')
 
 # Interpolate the weather variables to each road segment
-for c in ['temperature', 'dewpoint', 'humidity', 'wdirection', 'wspeed', 'visibility', 'pressure', 'humidex', 'wchill', 'risky']:
+for c in ['temperature', 'dewpoint', 'humidity', 'wdirection', 'wspeed', 'visibility', 'pressure', 'risky']:
     # Find the columns for each weather variable
     weathercolumns = df.columns[df.columns.get_level_values(0).isin([c])]
 
@@ -257,7 +257,10 @@ for c in ['temperature', 'dewpoint', 'humidity', 'wdirection', 'wspeed', 'visibi
     geocolumns = [('inversedistance', station) for station in stations]
 
     # Compute a weighted average of each weather variable
-    df.loc[:, (c, '')] = np.average(df[weathercolumns].to_numpy(), weights=df[geocolumns].to_numpy(), axis=1)
+    mask = df[weathercolumns].isna().to_numpy()
+    weightedaverage = np.ma.average(np.ma.array(df[weathercolumns].to_numpy(), mask=mask), weights=np.ma.array(df[geocolumns].to_numpy(), mask=mask), axis=1)
+    df.loc[:, (c, '')] = weightedaverage.data
+    df.loc[weightedaverage.mask, (c, '')] = np.nan
 
     # Drop the weather columns for each station
     df = df.drop(weathercolumns, axis=1)
