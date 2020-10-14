@@ -10,10 +10,19 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import geopandas as gpd
-from pvlib import solarposition
+#from pvlib import solarposition
 import os
 import urllib.request as urllib
 import datetime
+
+
+# CONSTANTS
+MAX_ACCIDENT_ROAD_SEGMENT_MATCH_RADIUS = 100
+
+
+# Logging
+import logging
+logging.basicConfig(level=logging.INFO)
 
 # Find the current working directory
 path = os.getcwd()
@@ -21,12 +30,12 @@ path = os.getcwd()
 # Create a folder that contains all data files
 if os.path.isdir(os.path.join(path, 'Data')) == False:
     raise Exception('Data directory does not exist, run retrieve script')
-data = os.path.join(path, 'Data')
+data_dir_path = os.path.join(path, 'Data')
 
 # Create a folder that contains all figures
 if os.path.isdir(os.path.join(path, 'Figures')) == False:
-    raise Exception('Figures directory does not exist, run retrieve script')
-figures = os.path.join(path, 'Figures')
+    os.mkdir('Figures')
+figures_dir_path = os.path.join(path, 'Figures')
 
 
 ################################################################################
@@ -36,7 +45,7 @@ figures = os.path.join(path, 'Figures')
 ################################################################################
 
 # Load the data
-accidents = pd.read_csv(os.path.join(data, 'accidents.csv'), usecols=['NO_SEQ_COLL', 'DT_ACCDN', 'HEURE_ACCDN', 'LOC_X', 'LOC_Y'])
+accidents = pd.read_csv(os.path.join(data_dir_path, 'accidents.csv'), usecols=['NO_SEQ_COLL', 'DT_ACCDN', 'HEURE_ACCDN', 'LOC_X', 'LOC_Y'])
 
 # Rename columns
 accidents = accidents.rename(columns={'NO_SEQ_COLL':'accidentid', 'DT_ACCDN':'date', 'HEURE_ACCDN':'time', 'LOC_X':'longitude', 'LOC_Y':'latitude'})
@@ -54,20 +63,31 @@ accidents = accidents.drop(['date', 'time'], axis=1)
 accidents.loc[:, 'datetime'] = accidents.datetime.dt.tz_localize('US/Eastern', ambiguous=True, nonexistent='shift_forward')
 accidents.loc[:, 'datetime'] = accidents.datetime.dt.tz_convert(None)
 
-# Convert the data frame to a geo data frame
+# Convert the lat/lng to a point using geo data
 accidents = gpd.GeoDataFrame(accidents, crs='EPSG:32188', geometry=gpd.points_from_xy(accidents.longitude, accidents.latitude))
 accidents = accidents.drop(['longitude', 'latitude'], axis=1)
 
 # Reset the data frame's index
 accidents = accidents.reset_index(drop=True)
 
-# Plot all road traffic accidents in 2019
-fig, ax = plt.subplots()
-accidents.plot(ax=ax, color='teal', markersize=0.1)
-ax.set_axis_off()
-fig.tight_layout()
-fig.savefig(os.path.join(figures, 'accidents.pdf'), format='pdf')
-plt.close()
+# log
+logging.info(f'Accidents loaded')
+
+# write
+out_path = os.path.join(figures_dir_path, 'accidents_2019.pdf')
+if os.path.exists(out_path) == False:
+
+    # Plot all road traffic accidents in 2019
+    fig, ax = plt.subplots()
+    accidents.plot(ax=ax, color='teal', markersize=0.1)
+    ax.set_axis_off()
+    fig.tight_layout()
+    fig.savefig(out_path, format='pdf')
+    plt.close()
+
+    # log
+    logging.info(f'Built {out_path}')
+
 
 ################################################################################
 #                                                                              #
@@ -76,7 +96,7 @@ plt.close()
 ################################################################################
 
 # Load the data
-segments = gpd.read_file(r'zip://'+os.path.join(data, 'segments.zip'))
+segments = gpd.read_file(r'zip://'+os.path.join(data_dir_path, 'segments.zip'))
 
 # Keep relevant columns
 segments = segments.loc[:, ['ID_TRC', 'CLASSE', 'SENS_CIR', 'geometry']]
@@ -90,13 +110,24 @@ segments = segments.astype({'segmentid':'int64', 'class':'int64', 'direction':'i
 # Reset the data frame's index
 segments = segments.reset_index(drop=True)
 
-# Plot all road segments
-fig, ax = plt.subplots()
-segments.plot(ax=ax, edgecolor='teal', linewidth=0.1)
-ax.set_axis_off()
-fig.tight_layout()
-fig.savefig(os.path.join(figures, 'segments.pdf'), format='pdf')
-plt.close()
+# log
+logging.info(f'Segments loaded')
+
+# write path
+out_path = os.path.join(figures_dir_path, 'segments.pdf')
+if os.path.exists(out_path) == False:
+
+    # Plot all road segments
+    fig, ax = plt.subplots()
+    segments.plot(ax=ax, edgecolor='teal', linewidth=0.1)
+    ax.set_axis_off()
+    fig.tight_layout()
+    fig.savefig(out_path, format='pdf')
+    plt.close()
+
+    # log
+    logging.info(f'Built {out_path}')
+
 
 ################################################################################
 #                                                                              #
@@ -108,7 +139,7 @@ plt.close()
 match = accidents.copy(deep=True)
 
 # Define a 100 meter radius circle around the location of each accident
-match.loc[:, 'geometry'] = match.geometry.buffer(100)
+match.loc[:, 'geometry'] = match.geometry.buffer(MAX_ACCIDENT_ROAD_SEGMENT_MATCH_RADIUS)
 
 # Find all road traffic accidents 100 meter radiuses that intersect with a road segment
 match = gpd.sjoin(match, segments.loc[:, ['segmentid', 'geometry']], how='left', op='intersects')
@@ -132,6 +163,13 @@ match = match.loc[match.index == match.smallest, :].drop(['geometry', 'distance'
 
 # Merge the matched data frame with the segments data frame
 positive = gpd.GeoDataFrame(pd.merge(match, segments, how='left'), geometry='geometry').drop('accidentid', axis=1)
+
+print(match.shape)
+print(positive.shape)
+
+# log
+logging.info(f'Matching accidents with segments done')
+
 
 ################################################################################
 #                                                                              #
@@ -174,6 +212,10 @@ df = df.loc[(df.duplicate == False) | (df.accident == 1), :].drop('duplicate', a
 # Redefine the type of the segment identifier
 df = df.astype({'segmentid':'uint64'})
 
+# log
+logging.info(f'Sampling of negative events done')
+print(df.columns)
+
 ################################################################################
 #                                                                              #
 # This section of the script preprocesses the weather data.                    #
@@ -185,7 +227,7 @@ columns = ['Longitude (x)', 'Latitude (y)', 'Climate ID', 'Date/Time', 'Temp (°
 types = dict(zip(columns, ['float64', 'float64', 'object', 'object', 'float64', 'float64', 'float64', 'float64', 'float64', 'float64', 'float64', 'object']))
 
 # Load the data
-weather = pd.read_csv(os.path.join(data, 'weather.csv'), dtype=types)
+weather = pd.read_csv(os.path.join(data_dir_path, 'weather.csv'), dtype=types)
 
 # Rename columns
 weather = weather.rename(columns=dict(zip(weather.columns, ['longitude', 'latitude', 'stationid', 'datetime', 'temperature', 'dewpoint', 'humidity', 'wdirection', 'wspeed', 'visibility', 'pressure', 'risky'])))
@@ -225,6 +267,9 @@ for c in weather.columns[~weather.columns.get_level_values(0).isin(['risky'])]:
 
 # Reset the index of the weather data frame
 weather = weather.reset_index()
+
+# log
+logging.info(f'Weather preprocessing done')
 
 ################################################################################
 #                                                                              #
@@ -270,6 +315,10 @@ df = df.drop([('inversedistance', station) for station in stations], axis=1)
 # Drop the first column index level
 df.columns = df.columns.droplevel(level=1)
 
+# log
+logging.info(f'Matching of road segment to weather measurements done')
+print(df.columns)
+
 ################################################################################
 #                                                                              #
 # This section of the script computes additional features.                     #
@@ -296,6 +345,9 @@ df = df.drop('direction', axis=1)
 df.loc[:, 'roadlength'] = df.geometry.length
 
 # One Hot Econding of month, week, day, weekday, hour
+
+# log
+logging.info(f'Additional features added')
 
 ################################################################################
 #                                                                              #
@@ -324,3 +376,6 @@ dfsolar = solarposition.get_solarposition(dfcopy.datetime, dfcopy.latitude, dfco
 df.loc[:, 'elevation'] = dfsolar.apparent_elevation.values
 df.loc[:, 'zenith'] = dfsolar.apparent_zenith.values
 df.loc[:, 'azimuth'] = dfsolar.azimuth.values
+
+# log
+logging.info(f'Solar info done')
