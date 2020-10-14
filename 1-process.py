@@ -20,16 +20,14 @@ path = os.getcwd()
 
 # Create a folder that contains all data files
 if os.path.isdir(os.path.join(path, 'Data')) == False:
-    os.mkdir('Data')
+    raise Exception('Data directory does not exist, run retrieve script')
 data = os.path.join(path, 'Data')
 
 # Create a folder that contains all figures
 if os.path.isdir(os.path.join(path, 'Figures')) == False:
-    os.mkdir('Figures')
+    raise Exception('Figures directory does not exist, run retrieve script')
 figures = os.path.join(path, 'Figures')
 
-# Retrieve the road traffic accidents, road segments and weather data
-%run -i "Retrieve.py"
 
 ################################################################################
 #                                                                              #
