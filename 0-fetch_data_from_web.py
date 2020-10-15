@@ -1,3 +1,11 @@
+################################################################################
+#                                                                              #
+# This script fetches all the source data from different web endpoints         #
+# and writes everything as csvs in the Data/ folder                            #
+#                                                                              #
+################################################################################
+
+
 import os
 import urllib.request as urllib
 import pandas as pd

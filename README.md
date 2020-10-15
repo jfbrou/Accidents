@@ -36,6 +36,14 @@ We use PostgreSQL with the [PostGIS extension](https://postgis.net/).
 
 ### Data Model
 
+
+**Accidents**
+
+    - accident_id text
+    - datetime timestamp
+    - geometry geometry(Point,32188)
+
+
 **Road Segments**
 
     - segment_id integer
@@ -44,10 +52,9 @@ We use PostgreSQL with the [PostGIS extension](https://postgis.net/).
     - geometry geometry(LineString,32188)
 
 
-**Accidents**
+**Weather Stations**
 
-    - accident_id text
-    - datetime timestamp
+    - station_id text
     - geometry geometry(Point,32188)
 
 
@@ -70,9 +77,43 @@ We use PostgreSQL with the [PostGIS extension](https://postgis.net/).
 
 To find matching road segments / accidents
 
-    WITH intersecting AS (SELECT accidents.accident_id as accident_id, road_segments.segment_id as segment_id, ST_Distance(accidents.geometry, ST_Centroid(road_segments.geometry)) as distance from accidents, road_segments where ST_Intersects(ST_Buffer(accidents.geometry, 100), road_segments.geometry) = true) SELECT DISTINCT ON (accident_id) accident_id, segment_id, distance FROM intersecting ORDER BY accident_id, distance ASC;
+    WITH acc_roadseg AS (
+        WITH acci_roadseg_intersections AS (
+            WITH accidents_subset AS (
+                SELECT accident_id as accident_id, geometry as accident_geom FROM accidents LIMIT 30
+            )
+            SELECT accidents_subset.accident_id as accident_id,
+                    road_segments.segment_id as road_segment_id,
+                    accidents_subset.accident_geom as accident_geom,
+                    ST_Distance(accidents_subset.accident_geom, ST_Centroid(road_segments.geometry)) as distance
+            FROM accidents_subset, road_segments
+            WHERE ST_Intersects(ST_Buffer(accidents_subset.accident_geom, 100), road_segments.geometry) = true
+        )
+        SELECT DISTINCT ON (accident_id) accident_id, road_segment_id, accident_geom
+        FROM acci_roadseg_intersections ORDER BY accident_id, distance ASC
+    )
+    SELECT acc_roadseg.accident_id as accident_id,
+            acc_roadseg.road_segment_id as road_segment_id,
+            weather_stations.station_id as weather_station_id,
+            ST_Distance(acc_roadseg.accident_geom, weather_stations.geometry) as weather_station_dist
+    FROM acc_roadseg, weather_stations
 
 
+## Data Features for training
+
+With our source data we consolidate a dataset with the following features,
+
+    - temperature
+    - dewpoint
+    - humidity
+    - wdirection
+    - wspeed
+    - visibility
+    - pressure
+
+    - sun_elevation
+    - sun_zenith
+    - sun_azimuth
 
 
 ## Contributors

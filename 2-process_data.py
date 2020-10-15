@@ -6,19 +6,25 @@
 ################################################################################
 
 # Import libraries
+import os
+import datetime
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+
 import geopandas as gpd
+from sqlalchemy import create_engine
+
 #from pvlib import solarposition
-import os
-import urllib.request as urllib
-import datetime
 
 
-# CONSTANTS
-MAX_ACCIDENT_ROAD_SEGMENT_MATCH_RADIUS = 100
-
+# Set up database connection engine
+from config import username, password, hostname, port, db_name
+engine = create_engine(
+    f'postgresql+psycopg2://{username}:{password}@{hostname}:{port}/{db_name}',
+    connect_args={'options': '-csearch_path={}'.format('public')}
+)
 
 # Logging
 import logging
@@ -27,148 +33,245 @@ logging.basicConfig(level=logging.INFO)
 # Find the current working directory
 path = os.getcwd()
 
-# Create a folder that contains all data files
-if os.path.isdir(os.path.join(path, 'Data')) == False:
-    raise Exception('Data directory does not exist, run retrieve script')
-data_dir_path = os.path.join(path, 'Data')
-
 # Create a folder that contains all figures
 if os.path.isdir(os.path.join(path, 'Figures')) == False:
     os.mkdir('Figures')
 figures_dir_path = os.path.join(path, 'Figures')
 
 
-################################################################################
-#                                                                              #
-# This section of the script preprocesses the road traffic accidents data.     #
-#                                                                              #
-################################################################################
+def draw_as_pdf(geometries, out_path):
+    """
+        Function to draw geometries on a pdf
+    """
 
-# Load the data
-accidents = pd.read_csv(os.path.join(data_dir_path, 'accidents.csv'), usecols=['NO_SEQ_COLL', 'DT_ACCDN', 'HEURE_ACCDN', 'LOC_X', 'LOC_Y'])
+    if os.path.exists(out_path) == False:
 
-# Rename columns
-accidents = accidents.rename(columns={'NO_SEQ_COLL':'accidentid', 'DT_ACCDN':'date', 'HEURE_ACCDN':'time', 'LOC_X':'longitude', 'LOC_Y':'latitude'})
+        # plot
+        fig, ax = plt.subplots()
+        geometries.plot(ax=ax, color='teal', markersize=0.1)
+        ax.set_axis_off()
+        fig.tight_layout()
+        fig.savefig(out_path, format='pdf')
+        plt.close()
 
-# Drop observations for which we do not observe the time or location of the event
-accidents = accidents.loc[accidents.longitude.notna() & accidents.latitude.notna() & (accidents.time != 'Non précisé'), :]
+        # log
+        logging.info(f'File created {out_path}')
 
-# Redefine the types of the date and time columns
-accidents.loc[:, 'date'] = pd.to_datetime(accidents.date, infer_datetime_format=True)
-accidents.loc[:, 'time'] = pd.to_datetime(accidents.time.str[:8], infer_datetime_format=True).dt.hour
-accidents.loc[:, 'datetime'] = accidents.date+accidents.time.transform(lambda x: datetime.timedelta(hours=x))
-accidents = accidents.drop(['date', 'time'], axis=1)
+    else:
+        logging.info(f'Already exists {out_path}')
 
-# Localize the time zone
-accidents.loc[:, 'datetime'] = accidents.datetime.dt.tz_localize('US/Eastern', ambiguous=True, nonexistent='shift_forward')
-accidents.loc[:, 'datetime'] = accidents.datetime.dt.tz_convert(None)
 
-# Convert the lat/lng to a point using geo data
-accidents = gpd.GeoDataFrame(accidents, crs='EPSG:32188', geometry=gpd.points_from_xy(accidents.longitude, accidents.latitude))
-accidents = accidents.drop(['longitude', 'latitude'], axis=1)
+def match_accident_with_road_segment(accident_id):
+    """
+        Function which pairs the accident with the nearest road segment
+    """
 
-# Reset the data frame's index
-accidents = accidents.reset_index(drop=True)
+    # Find the nearest road segment
+    nearest_road_segment_query = f"""
+        WITH distances AS (
+            SELECT
+                accidents.accident_id as accident_id,
+                road_segments.segment_id as road_segment_id,
+                ST_Distance(accidents.geometry, ST_Centroid(road_segments.geometry)) as distance_in_m
+            FROM
+                accidents,
+                road_segments
+            WHERE
+                accidents.accident_id = '{accident_id}'
+        )
+        SELECT DISTINCT ON (accident_id)
+            accident_id,
+            road_segment_id,
+            distance_in_m
+        FROM
+            distances
+        ORDER BY
+            accident_id, distance_in_m ASC
+    """
 
-# log
-logging.info(f'Accidents loaded')
+    nearest_road_segment = pd.read_sql_query(
+        sql=nearest_road_segment_query,
+        con=engine
+    )
 
-# write
-out_path = os.path.join(figures_dir_path, 'accidents_2019.pdf')
-if os.path.exists(out_path) == False:
+    return nearest_road_segment
 
-    # Plot all road traffic accidents in 2019
-    fig, ax = plt.subplots()
-    accidents.plot(ax=ax, color='teal', markersize=0.1)
-    ax.set_axis_off()
-    fig.tight_layout()
-    fig.savefig(out_path, format='pdf')
-    plt.close()
+
+def match_accident_with_weather_data(accident_id):
+    """
+        Function which pairs the accident with the nearest weather station
+    """
+
+    # Get weather data for accident
+    weather_query = f"""
+        WITH acci_weather AS (
+            WITH acci_weather_diff AS (
+                SELECT
+                    weather_records.index as weather_record_index,
+                    weather_records.station_id as weather_station_id,
+                    ABS(EXTRACT(EPOCH FROM (accident.datetime::timestamp - weather_records.datetime::timestamp))) as time_diff_in_s
+                FROM
+                    weather_records, (SELECT datetime FROM accidents WHERE accident_id = '{accident_id}') accident
+            )
+            SELECT DISTINCT ON (weather_station_id)
+                weather_record_index,
+                weather_station_id,
+                time_diff_in_s FROM acci_weather_diff
+            ORDER BY
+                weather_station_id,
+                time_diff_in_s ASC
+        )
+        SELECT
+            acci_weather.weather_record_index as weather_record_index,
+            acci_weather.weather_station_id as weather_station_id,
+            acci_weather.time_diff_in_s as time_diff_in_s,
+            ST_Distance(weather_stations.geometry, accidents.geometry) as distance_diff_in_m
+        FROM acci_weather
+        LEFT JOIN weather_stations ON acci_weather.weather_station_id = weather_stations.station_id
+        LEFT JOIN accidents ON accidents.accident_id = '{accident_id}'
+    """
+
+    weather_data = pd.read_sql_query(
+        sql=weather_query,
+        con=engine
+    )
+
+    return weather_data
+
+
+
+def get_accidents():
+    """
+        Loads the accidents as a pandas dataframe from the database
+    """
+
+    # SQL Query
+    sql_query = 'SELECT * FROM accidents'
+
+    # Pull the data from the database
+    accidents = gpd.read_postgis(
+        sql=sql_query,
+        con=engine,
+        geom_col='geometry'
+    )
 
     # log
-    logging.info(f'Built {out_path}')
+    logging.info(f'Accidents loaded')
+
+    return accidents
 
 
-################################################################################
-#                                                                              #
-# This section of the script preprocesses the road segments data.              #
-#                                                                              #
-################################################################################
+def get_weather_records():
+    """
+        Loads the weather_records as a pandas dataframe from the database
+    """
 
-# Load the data
-segments = gpd.read_file(r'zip://'+os.path.join(data_dir_path, 'segments.zip'))
+    # SQL Query
+    sql_query = 'SELECT * FROM weather_records'
 
-# Keep relevant columns
-segments = segments.loc[:, ['ID_TRC', 'CLASSE', 'SENS_CIR', 'geometry']]
-
-# Rename columns
-segments = segments.rename(columns={'ID_TRC':'segmentid', 'CLASSE':'class', 'SENS_CIR':'direction'})
-
-# Redefine the types of each column
-segments = segments.astype({'segmentid':'int64', 'class':'int64', 'direction':'int64'})
-
-# Reset the data frame's index
-segments = segments.reset_index(drop=True)
-
-# log
-logging.info(f'Segments loaded')
-
-# write path
-out_path = os.path.join(figures_dir_path, 'segments.pdf')
-if os.path.exists(out_path) == False:
-
-    # Plot all road segments
-    fig, ax = plt.subplots()
-    segments.plot(ax=ax, edgecolor='teal', linewidth=0.1)
-    ax.set_axis_off()
-    fig.tight_layout()
-    fig.savefig(out_path, format='pdf')
-    plt.close()
+    # Pull the data from the database
+    weather_records = pd.read_sql_query(
+        sql=sql_query,
+        con=engine
+    )
 
     # log
-    logging.info(f'Built {out_path}')
+    logging.info(f'Weather records loaded')
+
+    return weather_records
+
+
+def get_weather_stations():
+    """
+        Loads the weather_stations as a pandas dataframe from the database
+    """
+
+    # SQL Query
+    sql_query = 'SELECT * FROM weather_stations'
+
+    # Pull the data from the database
+    weather_stations = gpd.read_postgis(
+        sql=sql_query,
+        con=engine,
+        geom_col='geometry'
+    )
+
+    # log
+    logging.info(f'Weather stations loaded')
+
+    return weather_stations
+
+
+def get_road_segments():
+    """
+        Loads the road_segments as a pandas dataframe from the database
+    """
+
+    # SQL Query
+    sql_query = 'SELECT * FROM road_segments'
+
+    # Pull the data from the database
+    segments = gpd.read_postgis(
+        sql=sql_query,
+        con=engine,
+        geom_col='geometry'
+    )
+
+    # log
+    logging.info(f'Road segments loaded')
+
+    return segments
+
+
+def get_weighted_weather(weather_stations_data):
+
+    print(weather_stations_data)
 
 
 ################################################################################
 #                                                                              #
-# This section of the script matches road traffic accidents to road segments.  #
+#                        Loading the data from the DB                          #
 #                                                                              #
 ################################################################################
 
-# Create a data frame for matched road traffic accidents and road segments
-match = accidents.copy(deep=True)
+accidents = get_accidents()
 
-# Define a 100 meter radius circle around the location of each accident
-match.loc[:, 'geometry'] = match.geometry.buffer(MAX_ACCIDENT_ROAD_SEGMENT_MATCH_RADIUS)
+# road_segments = get_road_segments()
 
-# Find all road traffic accidents 100 meter radiuses that intersect with a road segment
-match = gpd.sjoin(match, segments.loc[:, ['segmentid', 'geometry']], how='left', op='intersects')
-match.loc[:, 'geometry'] = match.geometry.centroid
 
-# Drop accidents that were not matched to any road segment
-match = match.loc[match.index_right.notna(), :].drop('index_right', axis=1)
+################################################################################
+#                                                                              #
+#                                 Produce PDFs                                 #
+#                                                                              #
+################################################################################
 
-# Create a data frame with the geometry of matched road segments
-df = gpd.GeoDataFrame(pd.merge(match.loc[:, 'segmentid'], segments.loc[:, ['segmentid', 'geometry']], how='left'), geometry='geometry')
+# # write
+# out_path = os.path.join(figures_dir_path, 'accidents_2019.pdf')
+# draw_as_pdf(accidents, out_path)
 
-# Reset the index of the matched road traffic accidents and road segments data frame
-match = match.reset_index(drop=True)
+# # write
+# out_path = os.path.join(figures_dir_path, 'segments.pdf')
+# draw_as_pdf(road_segments, out_path)
 
-# Compute the distance between the matched accidents and segments
-match.loc[:, 'distance'] = match.distance(df)
+for index, row in accidents.iterrows():
 
-# For each accident, keep the match with the smallest distance
-match = pd.merge(match, match.groupby('accidentid', as_index=False).agg({'distance':'idxmin'}).rename(columns={'distance':'smallest'}), how='left')
-match = match.loc[match.index == match.smallest, :].drop(['geometry', 'distance', 'smallest'], axis=1)
+    if(index > 5):
+        break
 
-# Merge the matched data frame with the segments data frame
-positive = gpd.GeoDataFrame(pd.merge(match, segments, how='left'), geometry='geometry').drop('accidentid', axis=1)
+    # grab id
+    accident_id = row['accident_id']
 
-print(match.shape)
-print(positive.shape)
+    # link with road segment and weather
+    segment_data = match_accident_with_road_segment(accident_id)
+    weather_data = match_accident_with_weather_data(accident_id)
 
-# log
-logging.info(f'Matching accidents with segments done')
+    # process
+    get_weighted_weather(weather_data)
+
+
+
+raise Exception('stop')
+
 
 
 ################################################################################
@@ -222,39 +325,6 @@ print(df.columns)
 #                                                                              #
 ################################################################################
 
-# Define the variable types
-columns = ['Longitude (x)', 'Latitude (y)', 'Climate ID', 'Date/Time', 'Temp (°C)', 'Dew Point Temp (°C)', 'Rel Hum (%)', 'Wind Dir (10s deg)', 'Wind Spd (km/h)', 'Visibility (km)', 'Stn Press (kPa)', 'Weather']
-types = dict(zip(columns, ['float64', 'float64', 'object', 'object', 'float64', 'float64', 'float64', 'float64', 'float64', 'float64', 'float64', 'object']))
-
-# Load the data
-weather = pd.read_csv(os.path.join(data_dir_path, 'weather.csv'), dtype=types)
-
-# Rename columns
-weather = weather.rename(columns=dict(zip(weather.columns, ['longitude', 'latitude', 'stationid', 'datetime', 'temperature', 'dewpoint', 'humidity', 'wdirection', 'wspeed', 'visibility', 'pressure', 'risky'])))
-
-# Redefine the types of the date and time columns
-weather.loc[:, 'datetime'] = pd.to_datetime(weather.datetime, infer_datetime_format=True)
-
-# Localize the time zone
-weather.loc[:, 'datetime'] = weather.datetime.dt.tz_localize('EST')
-weather.loc[:, 'datetime'] = weather.datetime.dt.tz_convert(None)
-
-# Redefine the type of the station identifier
-weather.loc[:, 'stationid'] = weather.stationid.astype('str')
-
-# Convert the data frame to a geo data frame
-weather = gpd.GeoDataFrame(weather, crs='EPSG:4326', geometry=gpd.points_from_xy(weather.longitude, weather.latitude)).to_crs('EPSG:32188')
-weather = weather.drop(['longitude', 'latitude'], axis=1)
-
-# Record the stations' location
-locations = weather.groupby('stationid', as_index=False).agg({'geometry':'first'})
-
-# Drop the geometry column
-weather = weather.drop('geometry', axis=1)
-
-# Convert the risky weather categorical variable to a binary variable
-weather.loc[:, 'risky'] = (weather.risky.notna() & (weather.risky != 'Mainly Clear') & (weather.risky != 'Clear')).astype('int64')
-
 # Reshape the data frame
 weather = pd.pivot_table(weather, values=weather.columns[(weather.columns != 'datetime') & (weather.columns != 'stationid')], index=['datetime'], columns=['stationid'])
 
@@ -270,6 +340,7 @@ weather = weather.reset_index()
 
 # log
 logging.info(f'Weather preprocessing done')
+
 
 ################################################################################
 #                                                                              #
