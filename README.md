@@ -53,12 +53,26 @@ We use PostgreSQL with the [PostGIS extension](https://postgis.net/).
 
 **Weather Records**
 
+    - index bigint
+    - station_id text
+    - datetime timestamp
+    - temperature double precision
+    - dewpoint double precision
+    - humidity double precision
+    - wdirection double precision
+    - wspeed double precision
+    - visibility double precision
+    - pressure double precision
+    - risky integer
+
 
 ### SQL Queries
 
 To find matching road segments / accidents
 
-    SELECT accidents.accident_id as accident_id, road_segments.segment_id as segment_id, ST_Distance(accidents.geometry, ST_Centroid(road_segments.geometry)) as distance from accidents, road_segments where ST_Intersects(ST_Buffer(accidents.geometry, 100), road_segments.geometry) = true;
+    WITH intersecting AS (SELECT accidents.accident_id as accident_id, road_segments.segment_id as segment_id, ST_Distance(accidents.geometry, ST_Centroid(road_segments.geometry)) as distance from accidents, road_segments where ST_Intersects(ST_Buffer(accidents.geometry, 100), road_segments.geometry) = true) SELECT DISTINCT ON (accident_id) accident_id, segment_id, distance FROM intersecting ORDER BY accident_id, distance ASC;
+
+
 
 
 ## Contributors

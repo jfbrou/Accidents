@@ -33,6 +33,73 @@ if os.path.isdir(os.path.join(path, 'Data')) == False:
 data_dir_path = os.path.join(path, 'Data')
 
 
+
+################################################################################
+#                                                                              #
+# This section of the script preprocesses the weather data.                    #
+#                                                                              #
+################################################################################
+
+# Define the variable types
+columns = ['Longitude (x)', 'Latitude (y)', 'Climate ID', 'Date/Time', 'Temp (°C)', 'Dew Point Temp (°C)', 'Rel Hum (%)', 'Wind Dir (10s deg)', 'Wind Spd (km/h)', 'Visibility (km)', 'Stn Press (kPa)', 'Weather']
+dtypes = dict(zip(columns, ['float64', 'float64', 'object', 'object', 'float64', 'float64', 'float64', 'float64', 'float64', 'float64', 'float64', 'object']))
+
+# Load the data
+weather = pd.read_csv(os.path.join(data_dir_path, 'weather.csv'), dtype=dtypes)
+
+# Rename columns
+weather = weather.rename(columns=dict(zip(weather.columns, ['longitude', 'latitude', 'station_id', 'datetime', 'temperature', 'dewpoint', 'humidity', 'wdirection', 'wspeed', 'visibility', 'pressure', 'risky'])))
+
+# Redefine the types of the date and time columns
+weather.loc[:, 'datetime'] = pd.to_datetime(weather.datetime, infer_datetime_format=True)
+
+# Localize the time zone
+weather.loc[:, 'datetime'] = weather.datetime.dt.tz_localize('EST')
+weather.loc[:, 'datetime'] = weather.datetime.dt.tz_convert(None)
+
+# Redefine the type of the station identifier
+weather.loc[:, 'station_id'] = weather.station_id.astype('str')
+
+# Convert the data frame to a geo data frame
+weather = gpd.GeoDataFrame(weather, crs='EPSG:4326', geometry=gpd.points_from_xy(weather.longitude, weather.latitude)).to_crs('EPSG:32188')
+weather = weather.drop(['longitude', 'latitude'], axis=1)
+
+# Record the stations' location
+locations = weather.groupby('station_id', as_index=False).agg({'geometry':'first'})
+
+# Drop the geometry column
+weather = weather.drop('geometry', axis=1)
+
+# Convert the risky weather categorical variable to a binary variable
+weather.loc[:, 'risky'] = (weather.risky.notna() & (weather.risky != 'Mainly Clear') & (weather.risky != 'Clear')).astype('int64')
+
+# Reset the index of the weather data frame
+weather = weather.reset_index(drop=True)
+
+# add to db
+weather.to_sql(
+    con=engine,
+    name='weather',
+    if_exists='replace',
+    dtype={
+        'index': types.BigInteger(),
+        'station_id': types.Text(),
+        'datetime': types.DateTime(),
+        'temperature': types.Float(),
+        'dewpoint': types.Float(),
+        'humidity': types.Float(),
+        'wdirection': types.Float(),
+        'wspeed': types.Float(),
+        'visibility': types.Float(),
+        'pressure': types.Float(),
+        'risky': types.Integer()
+    }
+)
+
+# log
+logging.info(f'Weather loaded')
+
+
 ################################################################################
 #                                                                              #
 # This section of the script preprocesses the road segments data.              #
@@ -54,30 +121,21 @@ segments = segments.astype({'segment_id':'int64', 'class':'int64', 'direction':'
 # Reset the data frame's index
 segments = segments.reset_index(drop=True)
 
-
 # add to db
-try:
+segments.to_postgis(
+    con=engine,
+    name='road_segments',
+    if_exists='replace',
+    dtype={
+        'segment_id': types.BigInteger(),
+        'class': types.Integer(),
+        'direction': types.Integer(),
+        'geometry': Geometry(geometry_type='LINESTRING', srid=32188)
+    }
+)
 
-    segments.to_postgis(
-        con=engine,
-        name='road_segments',
-        if_exists='replace',
-        dtype={
-            'segment_id': types.Integer(),
-            'class': types.Integer(),
-            'direction': types.Integer(),
-            'geometry': Geometry(geometry_type='LINESTRING', srid=32188)
-        }
-    )
-
-    # log
-    logging.info(f'Segments loaded')
-
-except ValueError as err:
-    print(err)
-except:
-    logging.warning('Did not load segments into database')
-
+# log
+logging.info(f'Segments loaded')
 
 
 ################################################################################
@@ -113,28 +171,17 @@ accidents = accidents.drop(['longitude', 'latitude'], axis=1)
 accidents = accidents.reset_index(drop=True)
 
 
-try:
-    # add to database
-    accidents.to_postgis(
-        con=engine,
-        name='accidents',
-        if_exists='replace',
-        dtype={
-            'accident_id': types.Text(),
-            'datetime': types.DateTime(),
-            'geometry': Geometry(geometry_type='POINT', srid=32188)
-        }
-    )
+# add to database
+accidents.to_postgis(
+    con=engine,
+    name='accidents',
+    if_exists='replace',
+    dtype={
+        'accident_id': types.Text(),
+        'datetime': types.DateTime(),
+        'geometry': Geometry(geometry_type='POINT', srid=32188)
+    }
+)
 
-    # log
-    logging.info(f'Accidents loaded')
-
-
-except ValueError as err:
-    print(err)
-
-except psycopg2.errors as err:
-    print(err)
-
-except:
-    logging.warning('Did not load accidents into database')
+# log
+logging.info(f'Accidents loaded')
