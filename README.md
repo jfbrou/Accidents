@@ -42,6 +42,8 @@ We use PostgreSQL with the [PostGIS extension](https://postgis.net/).
     - accident_id text
     - datetime timestamp
     - geometry geometry(Point,32188)
+    - road_segment_id integer
+    - weather jsonb
 
 
 **Road Segments**

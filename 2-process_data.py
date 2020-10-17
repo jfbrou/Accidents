@@ -61,6 +61,151 @@ def draw_as_pdf(geometries, out_path):
         logging.info(f'Already exists {out_path}')
 
 
+def match_accidents_with_road_segments(
+        MAX_DISTANCE_BETWEEN_ACCIDENT_AND_ROAD_SEGMENT_IN_METERS=100,
+        NBR_ACCIDENTS_IN_PROCESSED_BATCH=30
+    ):
+    """
+        Function which pairs the accident with the nearest road segment
+    """
+
+    # build query
+    match_accidents_with_road_segments = f"""
+    WITH accidents_roadsegments AS (
+        WITH accidents_potential_roadsegments AS (
+            WITH accidents_subset AS (
+                SELECT
+                    accident_id,
+                    geometry
+                FROM
+                    accidents
+                WHERE
+                    road_segment_id IS NULL
+                LIMIT
+                    {NBR_ACCIDENTS_IN_PROCESSED_BATCH}
+            )
+            SELECT
+                accidents_subset.accident_id as accident_id,
+                accidents_subset.geometry as accident_geom,
+                road_segments.segment_id as road_segment_id,
+                ST_Distance(accidents_subset.geometry, ST_Centroid(road_segments.geometry)) as distance
+            FROM
+                accidents_subset,
+                road_segments
+            WHERE
+                ST_Intersects(
+                    ST_Buffer(accidents_subset.geometry, {MAX_DISTANCE_BETWEEN_ACCIDENT_AND_ROAD_SEGMENT_IN_METERS}),
+                    road_segments.geometry)
+                = true
+        )
+        SELECT
+            DISTINCT ON (accident_id)
+            accident_id,
+            road_segment_id,
+            accident_geom,
+            distance
+        FROM
+            accidents_potential_roadsegments
+        ORDER BY
+            accident_id,
+            distance ASC
+    )
+    UPDATE
+        accidents
+    SET
+        road_segment_id = accidents_roadsegments.road_segment_id
+    FROM
+        accidents_roadsegments
+    WHERE
+        accidents.accident_id = accidents_roadsegments.accident_id
+    """
+
+    # run query
+    success = True
+
+    try:
+        with engine.connect() as connection:
+            with connection.begin():
+                connection.execute(match_accidents_with_road_segments)
+    except:
+        success = False
+
+    return success
+
+
+def match_accidents_with_weathers():
+
+    query = f"""
+    WITH accidents_weather_full AS (
+        WITH accidents_weather AS (
+            WITH accidents_potential_weather AS (
+                WITH accidents_subset AS (
+                    SELECT
+                        accident_id,
+                        geometry,
+                        datetime
+                    FROM
+                        accidents
+                    WHERE
+                        weather IS NULL
+                    LIMIT
+                        2
+                )
+                SELECT
+                    accidents_subset.accident_id as accident_id,
+                    accidents_subset.geometry as accident_geom,
+                    weather_records.index as weather_record_index,
+                    weather_records.station_id as weather_station_id,
+                    ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) as time_diff_in_s
+                FROM
+                    accidents_subset,
+                    weather_records
+                WHERE
+                    ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) <= 3600
+            )
+            SELECT
+                DISTINCT ON (accident_id, weather_station_id)
+                accident_id,
+                accident_geom,
+                weather_record_index,
+                weather_station_id,
+                time_diff_in_s
+            FROM
+                accidents_potential_weather
+            ORDER BY
+                accident_id,
+                weather_station_id,
+                time_diff_in_s ASC
+        )
+        SELECT
+            accidents_weather.accident_id,
+            accidents_weather.weather_record_index,
+            accidents_weather.weather_station_id,
+            accidents_weather.time_diff_in_s,
+            ST_Distance(weather_stations.geometry, accidents_weather.accident_geom) AS distance_in_m,
+            weather_records.temperature,
+            weather_records.dewpoint,
+            weather_records.humidity,
+            weather_records.wdirection,
+            weather_records.wspeed,
+            weather_records.visibility,
+            weather_records.pressure,
+            weather_records.risky
+        FROM
+            accidents_weather
+        LEFT JOIN
+            weather_stations
+        ON
+            accidents_weather.weather_station_id = weather_stations.station_id
+        LEFT JOIN
+            weather_records
+        ON
+            weather_records.index = accidents_weather.weather_record_index
+    )
+    SELECT * FROM accidents_weather_full;
+    """
+
+
 def match_accident_with_road_segment(accident_id):
     """
         Function which pairs the accident with the nearest road segment
@@ -139,14 +284,15 @@ def match_accident_with_weather_data(accident_id):
     return weather_data
 
 
-
-def get_accidents():
+def get_accidents(LIMIT=None):
     """
         Loads the accidents as a pandas dataframe from the database
     """
 
     # SQL Query
     sql_query = 'SELECT * FROM accidents'
+    if(LIMIT is not None and type(LIMIT) == int):
+        sql_query = sql_query + f' LIMIT {LIMIT}'
 
     # Pull the data from the database
     accidents = gpd.read_postgis(
@@ -225,7 +371,22 @@ def get_road_segments():
 
 def get_weighted_weather(weather_stations_data):
 
-    print(weather_stations_data)
+    # convert to dict
+    weather_records = weather_stations_data.to_dict(orient='records')
+
+    # accumulate distance
+    total_distance = 0.0
+    for weather_record in weather_records:
+        total_distance += weather_record['distance_diff_in_m']
+
+    # weighted average
+    for i, weather_record in enumerate(weather_records):
+        weather_records[i]['dist_weighted'] = 1/(weather_record['distance_diff_in_m']/total_distance)
+
+    for weather_record in weather_records:
+        print(weather_record['dist_weighted'])
+
+    print('\n\n')
 
 
 ################################################################################
@@ -234,7 +395,15 @@ def get_weighted_weather(weather_stations_data):
 #                                                                              #
 ################################################################################
 
-accidents = get_accidents()
+res = match_accidents_with_road_segments(
+    MAX_DISTANCE_BETWEEN_ACCIDENT_AND_ROAD_SEGMENT_IN_METERS=50,
+    NBR_ACCIDENTS_IN_PROCESSED_BATCH=1000
+)
+
+print(res)
+raise Exception('stop')
+
+#accidents = get_accidents(LIMIT=100)
 
 # road_segments = get_road_segments()
 

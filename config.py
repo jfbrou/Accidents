@@ -2,5 +2,5 @@
 hostname = 'localhost'
 db_name = 'mtl_accidents'
 username = 'postgres'
-password = ''
+password = '31415926'
 port= '5432'
