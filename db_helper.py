@@ -57,16 +57,25 @@ def match_accidents_with_road_segments(
             SELECT
                 accidents_subset.accident_id as accident_id,
                 accidents_subset.geometry as accident_geom,
-                road_segments.segment_id as road_segment_id,
-                ST_Distance(accidents_subset.geometry, ST_Centroid(road_segments.geometry)) as distance_from_road_segment_centroid_in_m
+                road_segments_ordered.segment_id as road_segment_id,
+                ST_Distance(accidents_subset.geometry, road_segments_ordered.centroid) as distance_from_road_segment_centroid_in_m
             FROM
-                accidents_subset,
-                road_segments
-            WHERE
-                ST_Intersects(
-                    ST_Buffer(accidents_subset.geometry, {MAX_DISTANCE_BETWEEN_ACCIDENT_AND_ROAD_SEGMENT_IN_METERS}),
-                    road_segments.geometry)
-                = true
+                accidents_subset
+            LEFT JOIN LATERAL (
+                SELECT
+                    segment_id,
+                    ST_Centroid(road_segments.geometry) as centroid
+                FROM
+                    road_segments
+                WHERE
+                    ST_Intersects(
+                        ST_Buffer(accidents_subset.geometry, {MAX_DISTANCE_BETWEEN_ACCIDENT_AND_ROAD_SEGMENT_IN_METERS}),
+                        road_segments.geometry)
+                    = true
+                ORDER BY
+                    ST_Distance(accidents_subset.geometry, ST_Centroid(road_segments.geometry)) ASC
+                LIMIT 1
+            ) road_segments_ordered ON TRUE
         )
         SELECT
             DISTINCT ON (accident_id)
@@ -117,14 +126,24 @@ def match_accidents_with_weather_records(
                 SELECT
                     accidents_subset.accident_id as accident_id,
                     accidents_subset.geometry as accident_geom,
-                    weather_records.index as weather_record_index,
-                    weather_records.station_id as weather_station_id,
-                    ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) as time_diff_in_s
+                    weather_records_ordered.index as weather_record_index,
+                    weather_records_ordered.station_id as weather_station_id,
+                    weather_records_ordered.time_diff_in_s as time_diff_in_s
                 FROM
-                    accidents_subset,
-                    weather_records
-                WHERE
-                    ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) <= {MAX_TIME_DIFF_BETWEEN_ACCIDENT_AND_WEATHER_RECORD_IN_SEC}
+                    accidents_subset
+                LEFT JOIN LATERAL (
+                    SELECT
+                        index,
+                        station_id,
+                        ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) as time_diff_in_s
+                    FROM
+                        weather_records
+                    WHERE
+                        ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) <= {MAX_TIME_DIFF_BETWEEN_ACCIDENT_AND_WEATHER_RECORD_IN_SEC}
+                    ORDER BY
+                        ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) ASC
+                    LIMIT 1
+                ) weather_records_ordered ON TRUE
             )
             SELECT
                 DISTINCT ON (accident_id, weather_station_id)
