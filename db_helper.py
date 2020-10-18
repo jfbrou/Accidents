@@ -18,17 +18,17 @@ engine = create_engine(
 )
 
 def execute_query(query):
-
-    success = True
-
+    """
+        Executes a SQL query on the database
+    """
     try:
         with engine.connect() as connection:
             with connection.begin():
                 connection.execute(query)
     except:
-        success = False
+        return False
 
-    return success
+    return True
 
 
 def match_accidents_with_road_segments(
@@ -56,7 +56,6 @@ def match_accidents_with_road_segments(
             )
             SELECT
                 accidents_subset.accident_id as accident_id,
-                accidents_subset.geometry as accident_geom,
                 road_segments_ordered.segment_id as road_segment_id,
                 ST_Distance(accidents_subset.geometry, road_segments_ordered.centroid) as distance_from_road_segment_centroid_in_m
             FROM
@@ -81,7 +80,6 @@ def match_accidents_with_road_segments(
             DISTINCT ON (accident_id)
             accident_id,
             road_segment_id,
-            accident_geom,
             distance_from_road_segment_centroid_in_m
         FROM
             accidents_potential_roadsegments
@@ -93,10 +91,9 @@ def match_accidents_with_road_segments(
     """
 
     # run query
-    accidents_road_segments = gpd.read_postgis(
+    accidents_road_segments = pd.read_sql_query(
         sql=match_accidents_with_road_segments,
-        con=engine,
-        geom_col='accident_geom'
+        con=engine
     )
 
     return accidents_road_segments
