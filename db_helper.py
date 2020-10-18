@@ -21,18 +21,15 @@ def execute_query(query):
     """
         Executes a SQL query on the database
     """
-    try:
-        with engine.connect() as connection:
-            with connection.begin():
-                connection.execute(query)
-    except:
-        return False
 
-    return True
+    with engine.connect() as connection:
+        with connection.begin():
+            connection.execute(query)
 
 
 def match_accidents_with_road_segments(
-        NBR_ACCIDENTS_IN_PROCESSED_BATCH=30
+        NBR_ACCIDENTS_IN_PROCESSED_BATCH=30,
+        OFFSET=0
     ):
     """
         Function which pairs the accident with the nearest road segment
@@ -48,6 +45,8 @@ def match_accidents_with_road_segments(
             accidents
         WHERE
             road_segment_id IS NULL
+        OFFSET
+            {OFFSET}
         LIMIT
             {NBR_ACCIDENTS_IN_PROCESSED_BATCH}
     )
@@ -79,7 +78,8 @@ def match_accidents_with_road_segments(
 
 
 def match_accidents_with_weather_records(
-        NBR_ACCIDENTS_IN_PROCESSED_BATCH=30
+        NBR_ACCIDENTS_IN_PROCESSED_BATCH=30,
+        OFFSET=0
     ):
 
     match_query = f"""
@@ -93,6 +93,8 @@ def match_accidents_with_weather_records(
                 accidents
             WHERE
                 weather_data IS NULL
+            OFFSET
+                {OFFSET}
             LIMIT
                 {NBR_ACCIDENTS_IN_PROCESSED_BATCH}
         )
@@ -157,87 +159,47 @@ def match_accidents_with_weather_records(
     return accidents_weather_records
 
 
-
-def get_accidents(LIMIT=None):
+def sqlresults_to_dict(result_proxy):
     """
-        Loads the accidents as a pandas dataframe from the database
+        Parses SQL Alchemy result proxy into a dict
     """
 
-    # SQL Query
-    sql_query = 'SELECT * FROM accidents'
-    if(LIMIT is not None and type(LIMIT) == int):
-        sql_query = sql_query + f' LIMIT {LIMIT}'
+    # init var
+    d = {}
+    a = []
 
-    # Pull the data from the database
-    accidents = gpd.read_postgis(
-        sql=sql_query,
-        con=engine,
-        geom_col='geometry'
-    )
+    # go through rows
+    for row_proxy in result_proxy:
 
-    # log
-    logging.info(f'Accidents loaded')
+        # build up the dictionary
+        for column, value in row_proxy.items():
+            d = {**d, **{column: value}}
 
-    return accidents
+        # add to array
+        a.append(d)
+
+    return a
 
 
-def get_weather_records():
+def get_accidents_count():
     """
-        Loads the weather_records as a pandas dataframe from the database
+        Returns the number of accidents
     """
 
     # SQL Query
-    sql_query = 'SELECT * FROM weather_records'
+    sql_query = 'SELECT COUNT(*) FROM accidents'
 
-    # Pull the data from the database
-    weather_records = pd.read_sql_query(
-        sql=sql_query,
-        con=engine
-    )
+    count = 0
+    with engine.connect() as connection:
+        with connection.begin():
 
-    # log
-    logging.info(f'Weather records loaded')
+            # execute
+            resultproxy = connection.execute(sql_query)
 
-    return weather_records
+            # parse
+            results = sqlresults_to_dict(resultproxy)
 
+            # grab count
+            count = results[0]['count']
 
-def get_weather_stations():
-    """
-        Loads the weather_stations as a pandas dataframe from the database
-    """
-
-    # SQL Query
-    sql_query = 'SELECT * FROM weather_stations'
-
-    # Pull the data from the database
-    weather_stations = gpd.read_postgis(
-        sql=sql_query,
-        con=engine,
-        geom_col='geometry'
-    )
-
-    # log
-    logging.info(f'Weather stations loaded')
-
-    return weather_stations
-
-
-def get_road_segments():
-    """
-        Loads the road_segments as a pandas dataframe from the database
-    """
-
-    # SQL Query
-    sql_query = 'SELECT * FROM road_segments'
-
-    # Pull the data from the database
-    segments = gpd.read_postgis(
-        sql=sql_query,
-        con=engine,
-        geom_col='geometry'
-    )
-
-    # log
-    logging.info(f'Road segments loaded')
-
-    return segments
+    return count

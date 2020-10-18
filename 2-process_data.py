@@ -59,19 +59,9 @@ def get_weighted_weather(weather_stations_data):
     # convert to dict
     weather_records = weather_stations_data.to_dict(orient='records')
 
-    # accumulate distance
-    total_distance = 0.0
-    for weather_record in weather_records:
-        total_distance += weather_record['distance_diff_in_m']
+    print(weather_records)
 
-    # weighted average
-    for i, weather_record in enumerate(weather_records):
-        weather_records[i]['dist_weighted'] = 1/(weather_record['distance_diff_in_m']/total_distance)
 
-    for weather_record in weather_records:
-        print(weather_record['dist_weighted'])
-
-    print('\n\n')
 
 
 ################################################################################
@@ -80,24 +70,31 @@ def get_weighted_weather(weather_stations_data):
 #                                                                              #
 ################################################################################
 
-res = db_helper.match_accidents_with_road_segments(
-    NBR_ACCIDENTS_IN_PROCESSED_BATCH=100
+
+# get the number of accidents
+res = db_helper.get_accidents_count()
+print(f'Number of Accidents : {res}')
+print('\n\n\n')
+
+# get accidents matched with road segments
+accidents_roadsegments = db_helper.match_accidents_with_road_segments(
+    NBR_ACCIDENTS_IN_PROCESSED_BATCH=2,
+    OFFSET=0
 )
+print(accidents_roadsegments)
+print('\n\n\n')
 
-
-print(res)
-
-res = db_helper.match_accidents_with_weather_records(
-    NBR_ACCIDENTS_IN_PROCESSED_BATCH=10
+# get accidents matched with weather data
+accidents_weatherrecords = db_helper.match_accidents_with_weather_records(
+    NBR_ACCIDENTS_IN_PROCESSED_BATCH=2,
+    OFFSET=0
 )
+print(accidents_weatherrecords)
+print('\n\n\n')
 
-print(res)
 
 raise Exception('stop')
 
-#accidents = get_accidents(LIMIT=100)
-
-# road_segments = get_road_segments()
 
 
 ################################################################################
@@ -106,33 +103,13 @@ raise Exception('stop')
 #                                                                              #
 ################################################################################
 
-# # write
-# out_path = os.path.join(figures_dir_path, 'accidents_2019.pdf')
-# draw_as_pdf(accidents, out_path)
+# write
+out_path = os.path.join(figures_dir_path, 'accidents_2019.pdf')
+draw_as_pdf(accidents, out_path)
 
-# # write
-# out_path = os.path.join(figures_dir_path, 'segments.pdf')
-# draw_as_pdf(road_segments, out_path)
-
-for index, row in accidents.iterrows():
-
-    if(index > 5):
-        break
-
-    # grab id
-    accident_id = row['accident_id']
-
-    # link with road segment and weather
-    segment_data = match_accident_with_road_segment(accident_id)
-    weather_data = match_accident_with_weather_data(accident_id)
-
-    # process
-    get_weighted_weather(weather_data)
-
-
-
-raise Exception('stop')
-
+# write
+out_path = os.path.join(figures_dir_path, 'segments.pdf')
+draw_as_pdf(road_segments, out_path)
 
 
 ################################################################################
