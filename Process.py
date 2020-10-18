@@ -303,7 +303,7 @@ binary = pd.get_dummies(df.datetime.dt.month).rename(columns=names)
 df = pd.merge(df, binary, left_index=True, right_index=True)
 
 # Convert weeks to binary variables
-names = dict(zip(df.datetime.dt.isocalendar().week.unique().tolist(), ['week'+str(x) for x in df.datetime.dt.isocalendar().week.unique().tolist()]))
+names = dict(zip(list(df.datetime.dt.isocalendar().week.unique()), ['week'+str(x) for x in list(df.datetime.dt.isocalendar().week.unique())]))
 binary = pd.get_dummies(df.datetime.dt.isocalendar().week).rename(columns=names)
 df = pd.merge(df, binary, left_index=True, right_index=True)
 
