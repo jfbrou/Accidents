@@ -81,17 +81,17 @@ def get_weighted_weather(weather_stations_data):
 ################################################################################
 
 res = db_helper.match_accidents_with_road_segments(
-    MAX_DISTANCE_BETWEEN_ACCIDENT_AND_ROAD_SEGMENT_IN_METERS=100,
     NBR_ACCIDENTS_IN_PROCESSED_BATCH=100
 )
 
 
 print(res)
 
-# res = db_helper.match_accidents_with_weather_records(
-#     MAX_TIME_DIFF_BETWEEN_ACCIDENT_AND_WEATHER_RECORD_IN_SEC=0,
-#     NBR_ACCIDENTS_IN_PROCESSED_BATCH=10
-# )
+res = db_helper.match_accidents_with_weather_records(
+    NBR_ACCIDENTS_IN_PROCESSED_BATCH=10
+)
+
+print(res)
 
 raise Exception('stop')
 
