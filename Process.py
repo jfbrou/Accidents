@@ -284,20 +284,43 @@ df.loc[:, 'pastaccidents'] = df.groupby('segmentid', as_index=False).accident.cu
 
 # Convert the road segment class to binary variables
 names = dict(zip(df.loc[:, 'class'].unique().tolist(), ['class'+str(x) for x in df.loc[:, 'class'].unique().tolist()]))
-binaryclass = pd.get_dummies(df.loc[:, 'class']).rename(columns=names)
-df = pd.merge(df, binaryclass, left_index=True, right_index=True)
+binary = pd.get_dummies(df.loc[:, 'class']).rename(columns=names)
+df = pd.merge(df, binary, left_index=True, right_index=True)
 df = df.drop('class', axis=1)
 
 # Convert the road segment direction to binary variables
 names = dict(zip(df.loc[:, 'direction'].unique().tolist(), ['direction'+str(x) for x in df.loc[:, 'direction'].unique().tolist()]))
-binarydirection = pd.get_dummies(df.loc[:, 'direction']).rename(columns=names)
-df = pd.merge(df, binarydirection, left_index=True, right_index=True)
+binary = pd.get_dummies(df.loc[:, 'direction']).rename(columns=names)
+df = pd.merge(df, binary, left_index=True, right_index=True)
 df = df.drop('direction', axis=1)
 
 # Find the road segment length
 df.loc[:, 'roadlength'] = df.geometry.length
 
-# One Hot Econding of month, week, day, weekday, hour
+# Convert months to binary variables
+names = dict(zip(df.datetime.dt.month.unique().tolist(), ['month'+str(x) for x in df.datetime.dt.month.unique().tolist()]))
+binary = pd.get_dummies(df.datetime.dt.month).rename(columns=names)
+df = pd.merge(df, binary, left_index=True, right_index=True)
+
+# Convert weeks to binary variables
+names = dict(zip(df.datetime.dt.isocalendar().week.unique().tolist(), ['week'+str(x) for x in df.datetime.dt.isocalendar().week.unique().tolist()]))
+binary = pd.get_dummies(df.datetime.dt.isocalendar().week).rename(columns=names)
+df = pd.merge(df, binary, left_index=True, right_index=True)
+
+# Convert days to binary variables
+names = dict(zip(df.datetime.dt.day.unique().tolist(), ['day'+str(x) for x in df.datetime.dt.day.unique().tolist()]))
+binary = pd.get_dummies(df.datetime.dt.day).rename(columns=names)
+df = pd.merge(df, binary, left_index=True, right_index=True)
+
+# Convert weekdays to binary variables
+names = dict(zip(df.datetime.dt.weekday.unique().tolist(), ['weekday'+str(x) for x in df.datetime.dt.weekday.unique().tolist()]))
+binary = pd.get_dummies(df.datetime.dt.weekday).rename(columns=names)
+df = pd.merge(df, binary, left_index=True, right_index=True)
+
+# Convert hours to binary variables
+names = dict(zip(df.datetime.dt.hour.unique().tolist(), ['hour'+str(x) for x in df.datetime.dt.hour.unique().tolist()]))
+binary = pd.get_dummies(df.datetime.dt.hour).rename(columns=names)
+df = pd.merge(df, binary, left_index=True, right_index=True)
 
 ################################################################################
 #                                                                              #
