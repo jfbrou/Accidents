@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import geopandas as gpd
+from shapely.geometry import Point, LineString
 from pvlib import solarposition
 import os
 import urllib.request as urllib
@@ -86,8 +87,11 @@ segments = segments.loc[:, ['ID_TRC', 'CLASSE', 'SENS_CIR', 'geometry']]
 # Rename columns
 segments = segments.rename(columns={'ID_TRC':'segmentid', 'CLASSE':'class', 'SENS_CIR':'direction'})
 
+# Find the number of intersections for each segment
+segments.loc[:, 'intersections'] = gpd.sjoin(segments, segments.loc[:, ['geometry']], how='left', op='intersects').groupby('segmentid', as_index=False).agg({'index_right':'count'}).index_right
+
 # Redefine the types of each column
-segments = segments.astype({'segmentid':'int64', 'class':'int64', 'direction':'int64'})
+segments = segments.astype({'segmentid':'int64', 'class':'int64', 'direction':'int64', 'intersections':'int64'})
 
 # Reset the data frame's index
 segments = segments.reset_index(drop=True)
@@ -218,13 +222,6 @@ weather.loc[:, 'risky'] = (weather.risky.notna() & (weather.risky != 'Mainly Cle
 # Reshape the data frame
 weather = pd.pivot_table(weather, values=weather.columns[(weather.columns != 'datetime') & (weather.columns != 'stationid')], index=['datetime'], columns=['stationid'])
 
-# Smooth the weather conditions with an exponential moving average with a halflife of 12 hours
-for c in weather.columns[~weather.columns.get_level_values(0).isin(['risky'])]:
-    weather.loc[:, c] = weather.loc[:, c].interpolate(limit=12, limit_direction='both')
-    missing = weather.loc[:, c].isna()
-    weather.loc[:, c] = weather.loc[:, c].ewm(alpha=1-np.exp(-np.log(2)/12)).mean()
-    weather.loc[missing, c] = np.nan
-
 # Reset the index of the weather data frame
 weather = weather.reset_index()
 
@@ -294,8 +291,14 @@ binary = pd.get_dummies(df.loc[:, 'direction']).rename(columns=names)
 df = pd.merge(df, binary, left_index=True, right_index=True)
 df = df.drop('direction', axis=1)
 
-# Find the road segment length
+# Compute the road segment length
 df.loc[:, 'roadlength'] = df.geometry.length
+
+# Compute the area of the road segment's convex hull
+df.loc[:, 'convexhull'] = df.geometry.convex_hull.area
+
+# Compute the road segment sinuosity
+df.loc[:, 'sinuosity'] = df.geometry.apply(lambda x: x.length/LineString((x.coords[0], x.coords[-1])).length)
 
 # Convert months to binary variables
 names = dict(zip(df.datetime.dt.month.unique().tolist(), ['month'+str(x) for x in df.datetime.dt.month.unique().tolist()]))
