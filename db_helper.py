@@ -29,6 +29,7 @@ def execute_query(query):
 
 def match_accidents_with_road_segments(
         NBR_ACCIDENTS_IN_PROCESSED_BATCH=30,
+        MAX_DISTANCE_BETWEEN_ACCIDENT_AND_ROAD_SEGMENT_IN_M=100,
         OFFSET=0
     ):
     """
@@ -37,49 +38,67 @@ def match_accidents_with_road_segments(
 
     # build query
     match_accidents_with_road_segments = f"""
-    WITH accidents_subset AS (
+    WITH accidents_roadsegments AS (
+        WITH accidents_subset AS (
+            SELECT
+                accident_id,
+                geometry
+            FROM
+                accidents
+            ORDER BY
+                index
+            OFFSET
+                {OFFSET}
+            LIMIT
+                {NBR_ACCIDENTS_IN_PROCESSED_BATCH}
+        )
         SELECT
-            accident_id,
-            geometry
+            accidents_subset.accident_id as accident_id,
+            road_segments_ordered.road_segment_id as road_segment_id,
+            ST_Distance(accidents_subset.geometry, road_segments_ordered.geometry) as distance_from_road_segment_in_m
         FROM
-            accidents
-        WHERE
-            road_segment_id IS NULL
-        OFFSET
-            {OFFSET}
-        LIMIT
-            {NBR_ACCIDENTS_IN_PROCESSED_BATCH}
+            accidents_subset
+        LEFT JOIN LATERAL (
+            SELECT
+                road_segment_id,
+                geometry
+            FROM
+                road_segments
+            ORDER BY
+                ST_Distance(accidents_subset.geometry, road_segments.geometry) ASC
+            OFFSET 0
+            LIMIT 1
+        ) road_segments_ordered ON TRUE
     )
-    SELECT
-        accidents_subset.accident_id as accident_id,
-        road_segments_ordered.road_segment_id as road_segment_id,
-        ST_Distance(accidents_subset.geometry, road_segments_ordered.centroid) as distance_from_road_segment_centroid_in_m
+    UPDATE
+        accidents
+    SET
+        road_segment_id =
+            CASE
+                WHEN distance_from_road_segment_in_m <= {MAX_DISTANCE_BETWEEN_ACCIDENT_AND_ROAD_SEGMENT_IN_M}
+                    THEN
+                        accidents_roadsegments.road_segment_id
+                ELSE
+                    NULL
+            END
     FROM
-        accidents_subset
-    LEFT JOIN LATERAL (
-        SELECT
-            road_segment_id,
-            ST_Centroid(road_segments.geometry) as centroid
-        FROM
-            road_segments
-        ORDER BY
-            ST_Distance(accidents_subset.geometry, ST_Centroid(road_segments.geometry)) ASC
-        LIMIT 1
-    ) road_segments_ordered ON TRUE
+        accidents_roadsegments
+    WHERE
+        accidents.accident_id = accidents_roadsegments.accident_id
     """
 
     # run query
-    accidents_road_segments = pd.read_sql_query(
-        sql=match_accidents_with_road_segments,
-        con=engine
-    )
-
-    return accidents_road_segments
+    with engine.connect() as connection:
+        with connection.begin():
+            connection.execute(match_accidents_with_road_segments)
 
 
 def match_accidents_with_weather_records(
         NBR_ACCIDENTS_IN_PROCESSED_BATCH=30,
-        OFFSET=0
+        OFFSET=0,
+        MATCH_WITH_MAX_NBR_OF_WEATHER_STATIONS=3,
+        WEATHER_STATION_MAX_DIST_FROM_ACCIDENT_IN_M=15000,
+        WEATHER_DATA_MAX_TIME_DELTA_IN_S=7200
     ):
 
     match_query = f"""
@@ -91,8 +110,8 @@ def match_accidents_with_weather_records(
                 datetime
             FROM
                 accidents
-            WHERE
-                weather_data IS NULL
+            ORDER BY
+                index
             OFFSET
                 {OFFSET}
             LIMIT
@@ -100,54 +119,37 @@ def match_accidents_with_weather_records(
         )
         SELECT
             accidents_subset.accident_id as accident_id,
-            accidents_subset.geometry as accident_geom,
-            weather_records_ordered.index as weather_record_index,
-            weather_records_ordered.weather_station_id as weather_station_id,
-            weather_records_ordered.time_diff_in_s as time_diff_in_s
+            array_agg(weather_records_ordered.index) as weather_data
         FROM
             accidents_subset
         LEFT JOIN LATERAL (
             SELECT
-                index,
-                weather_station_id,
-                ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) as time_diff_in_s
+                weather_records.index
             FROM
                 weather_records
+            LEFT JOIN
+                weather_stations
+            ON
+                weather_stations.weather_station_id = weather_records.weather_station_id
+            WHERE
+                ST_Distance(weather_stations.geometry, accidents_subset.geometry) <= {WEATHER_STATION_MAX_DIST_FROM_ACCIDENT_IN_M}
+                AND ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) <= {WEATHER_DATA_MAX_TIME_DELTA_IN_S}
             ORDER BY
                 ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) ASC
-            LIMIT 1
+            OFFSET 0
+            LIMIT {MATCH_WITH_MAX_NBR_OF_WEATHER_STATIONS}
         ) weather_records_ordered ON TRUE
+        GROUP BY
+            accidents_subset.accident_id
     )
-    SELECT
-        accidents_weather.accident_id as accident_id,
-        SUM(ST_Distance(weather_stations.geometry, accidents_weather.accident_geom)) as distance_sum_in_m,
-        json_agg(
-            json_build_object(
-                'weather_station_id', accidents_weather.weather_station_id,
-                'time_diff_in_s', accidents_weather.time_diff_in_s,
-                'distance_in_m', ST_Distance(weather_stations.geometry, accidents_weather.accident_geom),
-                'temperature', weather_records.temperature,
-                'dewpoint', weather_records.dewpoint,
-                'humidity',weather_records.humidity,
-                'wdirection',weather_records.wdirection,
-                'wspeed',weather_records.wspeed,
-                'visibility',weather_records.visibility,
-                'pressure',weather_records.pressure,
-                'risky',weather_records.risky
-            )
-        ) as weather_data
+    UPDATE
+        accidents
+    SET
+        weather_data = accidents_weather.weather_data
     FROM
         accidents_weather
-    LEFT JOIN
-        weather_stations
-    ON
-        accidents_weather.weather_station_id = weather_stations.weather_station_id
-    LEFT JOIN
-        weather_records
-    ON
-        weather_records.index = accidents_weather.weather_record_index
-    GROUP BY
-        accidents_weather.accident_id
+    WHERE
+        accidents.accident_id = accidents_weather.accident_id
     """
 
     # run query
@@ -203,3 +205,14 @@ def get_accidents_count():
             count = results[0]['count']
 
     return count
+
+
+def update_accident(accidents):
+
+    accidents.to_sql(
+        name='accidents',
+        con=engine,
+        if_exists='replace',
+        index=False,
+
+    )
