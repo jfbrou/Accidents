@@ -77,21 +77,18 @@ print(f'Number of Accidents : {res}')
 print('\n\n\n')
 
 # get accidents matched with road segments
-# db_helper.match_accidents_with_road_segments(
-#     NBR_ACCIDENTS_IN_PROCESSED_BATCH=5000,
-#     MAX_DISTANCE_BETWEEN_ACCIDENT_AND_ROAD_SEGMENT_IN_M=25,
-#     OFFSET=0
-# )
-
-
-# # get accidents matched with weather data
-db_helper.match_accidents_with_weather_records(
-    NBR_ACCIDENTS_IN_PROCESSED_BATCH=1000,
+db_helper.match_accidents_with_road_segments(
+    NBR_ACCIDENTS_IN_PROCESSED_BATCH=5000,
+    MAX_DISTANCE_BETWEEN_ACCIDENT_AND_ROAD_SEGMENT_IN_M=25,
     OFFSET=0
 )
-# print(accidents_weatherrecords)
-# print('\n\n\n')
 
+
+# get accidents matched with weather data
+db_helper.match_accidents_with_weather_records(
+    NBR_ACCIDENTS_IN_PROCESSED_BATCH=100,
+    OFFSET=0
+)
 
 raise Exception('stop')
 

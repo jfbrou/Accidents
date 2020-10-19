@@ -153,12 +153,10 @@ def match_accidents_with_weather_records(
     """
 
     # run query
-    accidents_weather_records = pd.read_sql_query(
-        sql=match_query,
-        con=engine
-    )
+    with engine.connect() as connection:
+        with connection.begin():
+            connection.execute(match_query)
 
-    return accidents_weather_records
 
 
 def sqlresults_to_dict(result_proxy):
