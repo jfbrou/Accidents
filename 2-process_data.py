@@ -78,16 +78,19 @@ print('\n\n\n')
 
 # get accidents matched with road segments
 db_helper.match_accidents_with_road_segments(
-    NBR_ACCIDENTS_IN_PROCESSED_BATCH=5000,
+    NBR_ACCIDENTS_IN_PROCESSED_BATCH=50,
     MAX_DISTANCE_BETWEEN_ACCIDENT_AND_ROAD_SEGMENT_IN_M=25,
     OFFSET=0
 )
 
-
 # get accidents matched with weather data
 db_helper.match_accidents_with_weather_records(
-    NBR_ACCIDENTS_IN_PROCESSED_BATCH=100,
-    OFFSET=0
+    NBR_ACCIDENTS_IN_PROCESSED_BATCH=200,
+    OFFSET=0,
+    WEATHER_STATION_MAX_DIST_FROM_ACCIDENT_IN_M=15000,
+    WEATHER_DATA_MAX_TIME_DELTA_IN_S=7200,
+    MATCH_WITH_N_NEAREST_WEATHER_STATIONS=5,
+    ORDER_BY_TIME_DIFF=False
 )
 
 raise Exception('stop')
