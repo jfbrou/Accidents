@@ -30,38 +30,6 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
 
-# Find the current working directory
-path = os.getcwd()
-
-# Create a folder that contains all figures
-if os.path.isdir(os.path.join(path, 'Figures')) == False:
-    os.mkdir('Figures')
-figures_dir_path = os.path.join(path, 'Figures')
-
-
-def draw_as_pdf(geometries, out_path):
-    """
-        Function to draw geometries on a pdf
-    """
-
-    if os.path.exists(out_path) == False:
-
-        # plot
-        fig, ax = plt.subplots()
-        geometries.plot(ax=ax, color='teal', markersize=0.1)
-        ax.set_axis_off()
-        fig.tight_layout()
-        fig.savefig(out_path, format='pdf')
-        plt.close()
-
-        # log
-        logging.info(f'File created {out_path}')
-
-    else:
-        logging.info(f'Already exists {out_path}')
-
-
-
 ################################################################################
 #                                                                              #
 #                        Loading the data from the DB                          #
@@ -69,7 +37,7 @@ def draw_as_pdf(geometries, out_path):
 ################################################################################
 
 # get the processed accidents
-positive = db_helper.get_accidents()
+positive = db_helper.get_accidents(LIMIT=20000)
 
 
 ################################################################################
@@ -111,9 +79,9 @@ df.loc[:, 'duplicate'] = df.duplicated(keep=False)
 df = df.loc[(df.duplicate == False) | (df.accident == 1), :].drop('duplicate', axis=1)
 
 # log
-logging.info(f'Sampling of negative events done')
-print(df.columns)
-
+print("Length of set : ", len(df))
+print("Number of positives : ", len(df.loc[df['accident'] == 1]))
+print("Number of negatives : ", len(df.loc[df['accident'] == 0]))
 
 ################################################################################
 #                                                                              #
@@ -121,23 +89,27 @@ print(df.columns)
 #                                                                              #
 ################################################################################
 
-# Split features/label
-features = ['road_segment_class','road_segment_direction',
-            'temperature', 'dewpoint', 'humidity', 'wdirection','wspeed', 'visibility', 'pressure', 'risky']
+# keep only certain columns
+features = ['accident', 'temperature', 'dewpoint', 'humidity', 'wdirection', 'wspeed', 'visibility', 'pressure', 'risky']
+df = df[features]
 
+# drop rows with null values
+df = df.dropna()
+
+# Split features/label
+features = ['temperature', 'dewpoint', 'humidity', 'wdirection','wspeed', 'visibility', 'pressure', 'risky']
 label = ['accident']
 X = df[features]
 y = df[label]
 
 # Split the data
 train_X, valid_X, train_Y, valid_Y = train_test_split(X, y, test_size=0.15, random_state=42, shuffle=True, stratify=y)
+print("Length of training set : ", len(train_X))
+print("Length of validation set : ", len(valid_X))
 
 # cast to np
 valid_Y = np.array(valid_Y)
 valid_X = np.array(valid_X)
-
-print("Length of training set : ", len(train_X))
-print("Length of validation set : ", len(valid_X))
 
 # Normalize data
 scaler = StandardScaler()
@@ -145,13 +117,42 @@ train_X_n = scaler.fit_transform(train_X)
 valid_X_n = scaler.transform(valid_X)
 
 
+
+################################################################################
+#                                                                              #
+# Random Forest                                                                #
+#                                                                              #
+################################################################################
+
+# from sklearn.ensemble import RandomForestClassifier
+
+# rdf_classifier = RandomForestClassifier(n_estimators=30, random_state=0)
+# rdf_classifier.fit(train_X, train_Y)
+
+# rdf_predictions = rdf_classifier.predict(valid_X)
+
+# success = 0
+# for i, pred in enumerate(rdf_predictions):
+#     if(pred == valid_Y[i]):
+#         success += 1
+
+# print("RDF Validation Accuracy = " + str(success/len(valid_X)))
+
+
+
+################################################################################
+#                                                                              #
+# CNN                                                                          #
+#                                                                              #
+################################################################################
+
 # define model
 model = Sequential()
-model.add(Dense(100, input_dim=len(features), activation= "relu"))
-model.add(Dense(60, activation= "relu"))
-model.add(Dropout(rate=0.3))
-model.add(Dense(60, activation= "relu"))
-model.add(Dense(30, activation= "relu"))
+model.add(Dense(128, input_dim=len(features), activation= "relu"))
+model.add(Dense(64, activation= "relu"))
+model.add(Dropout(rate=0.5))
+model.add(Dense(64, activation= "relu"))
+model.add(Dense(32, activation= "relu"))
 model.add(Dense(1, activation='sigmoid'))
 model.summary() #Print model Summary
 
@@ -159,11 +160,7 @@ model.summary() #Print model Summary
 model.compile(loss="binary_crossentropy" , optimizer="adam", metrics=["accuracy"])
 
 # Fit Model
-history = model.fit(train_X_n, train_Y, epochs=10, verbose=0)
-
-# eval
-score = model.evaluate(valid_X_n, valid_Y)
-print('Test Accuracy: {}'.format(score[1]))
+history = model.fit(train_X_n, train_Y, batch_size=128, epochs=10, verbose=0)
 
 # summarize history for accuracy
 plt.plot(history.history['accuracy'])
@@ -173,9 +170,16 @@ plt.xlabel('epoch')
 plt.legend(['train', 'test'], loc='upper left')
 plt.show()
 
-# predict
-cnn_predictions = model.predict(valid_X_n)
+# summarize history for loss
+plt.plot(history.history['loss'])
+plt.title('model loss')
+plt.ylabel('loss')
+plt.xlabel('epoch')
+plt.legend(['train', 'test'], loc='upper left')
+plt.show()
 
+# evaluate predict
+cnn_predictions = model.predict(valid_X_n)
 success = 0
 for i, pred in enumerate(cnn_predictions):
     if(round(pred[0]) == valid_Y[i]):
@@ -183,41 +187,5 @@ for i, pred in enumerate(cnn_predictions):
 
 print("Validation Accuracy = " + str(success/len(valid_X_n)))
 
+# save model
 model.save('model_cnn.h5')
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-################################################################################
-#                                                                              #
-#                                 Produce PDFs                                 #
-#                                                                              #
-################################################################################
-
-# write
-out_path = os.path.join(figures_dir_path, 'accidents_2019.pdf')
-draw_as_pdf(accidents, out_path)
-
-# write
-out_path = os.path.join(figures_dir_path, 'segments.pdf')
-draw_as_pdf(road_segments, out_path)

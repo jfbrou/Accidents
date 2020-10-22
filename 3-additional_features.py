@@ -34,9 +34,6 @@ print(f'Number of Accidents : {res}')
 print('\n\n\n')
 
 
-res = db_helper.get_accidents()
-print(res)
-
 
 ################################################################################
 #                                                                              #
