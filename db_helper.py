@@ -98,17 +98,9 @@ def match_accidents_with_weather_records(
         OFFSET=0,
         WEATHER_STATION_MAX_DIST_FROM_ACCIDENT_IN_M=15000,
         WEATHER_DATA_MAX_TIME_DELTA_IN_S=7200,
-        MATCH_WITH_N_NEAREST_WEATHER_STATIONS=3,
-        ORDER_BY_TIME_DIFF=False
+        MATCH_WITH_N_NEAREST_WEATHER_STATIONS=3
     ):
 
-    # check order_by input
-    order_by_arg = ''
-    if(ORDER_BY_TIME_DIFF == True):
-        order_by_arg = """
-        ORDER BY
-                ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) ASC
-        """
 
     match_query = f"""
     UPDATE
@@ -158,7 +150,8 @@ def match_accidents_with_weather_records(
                         weather_stations_subset.weather_station_id = weather_records.weather_station_id
                     WHERE
                         ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) <= {WEATHER_DATA_MAX_TIME_DELTA_IN_S}
-                    {order_by_arg}
+                    ORDER BY
+                        ABS(EXTRACT(EPOCH FROM (accidents_subset.datetime::timestamp - weather_records.datetime::timestamp))) ASC
                     OFFSET 0
                     LIMIT {MATCH_WITH_N_NEAREST_WEATHER_STATIONS}
                 ) AS weather_records_ordered
@@ -174,7 +167,6 @@ def match_accidents_with_weather_records(
     with engine.connect() as connection:
         with connection.begin():
             connection.execute(match_query)
-
 
 
 def sqlresults_to_dict(result_proxy):
@@ -221,3 +213,164 @@ def get_accidents_count():
             count = results[0]['count']
 
     return count
+
+
+def get_accidents(
+        OFFSET=0,
+        LIMIT=1000
+    ):
+    """
+        Returns the accidents with joined data
+    """
+
+    # SQL Query
+    sql_query = f"""
+        SELECT
+            accidents.accident_id,
+            accidents.datetime as accident_datetime,
+            accidents.geometry as accident_geometry,
+            road_segments.class as road_segment_class,
+            road_segments.direction as road_segment_direction,
+            road_segments.geometry as road_segment_geometry,
+            accidents_weather_data_agg.temperature,
+            accidents_weather_data_agg.dewpoint,
+            accidents_weather_data_agg.humidity,
+            accidents_weather_data_agg.wdirection,
+            accidents_weather_data_agg.wspeed,
+            accidents_weather_data_agg.visibility,
+            accidents_weather_data_agg.pressure,
+            accidents_weather_data_agg.risky
+        FROM
+            (
+                WITH accidents_weather_data AS
+                (
+                    WITH accidents_subset AS (
+                        SELECT
+                            accident_id,
+                            geometry,
+                            weather_data
+                        FROM
+                            accidents
+                        WHERE
+                            weather_data IS NOT NULL
+                        ORDER BY
+                            index
+                        OFFSET
+                            {OFFSET}
+                        LIMIT
+                            {LIMIT}
+                    )
+                    SELECT
+                        accidents_subset.accident_id as accident_id,
+                        ST_Distance(accidents_subset.geometry, weather_stations.geometry) as distance_from_weather_station,
+                        weather_records.temperature as temperature,
+                        weather_records.dewpoint as dewpoint,
+                        weather_records.humidity as humidity,
+                        weather_records.wdirection as wdirection,
+                        weather_records.wspeed as wspeed,
+                        weather_records.visibility as visibility,
+                        weather_records.pressure as pressure,
+                        weather_records.risky as risky
+                    FROM
+                        accidents_subset,
+                        unnest(weather_data) as weather_data_index
+                    INNER JOIN
+                        weather_records
+                    ON
+                        weather_data_index = weather_records.index
+                    INNER JOIN
+                        weather_stations
+                    ON
+                        weather_stations.weather_station_id = weather_records.weather_station_id
+                )
+                SELECT
+                    accidents_weather_data.accident_id as accident_id,
+                    SUM(accidents_weather_data.temperature*(1.0-(accidents_weather_data.distance_from_weather_station/grouped_accidents_weather_data.sum_of_distance_temperature))) as temperature,
+                    SUM(accidents_weather_data.dewpoint*(1.0-(accidents_weather_data.distance_from_weather_station/grouped_accidents_weather_data.sum_of_distance_dewpoint))) as dewpoint,
+                    SUM(accidents_weather_data.humidity*(1.0-(accidents_weather_data.distance_from_weather_station/grouped_accidents_weather_data.sum_of_distance_humidity))) as humidity,
+                    SUM(accidents_weather_data.wdirection*(1.0-(accidents_weather_data.distance_from_weather_station/grouped_accidents_weather_data.sum_of_distance_wdirection))) as wdirection,
+                    SUM(accidents_weather_data.wspeed*(1.0-(accidents_weather_data.distance_from_weather_station/grouped_accidents_weather_data.sum_of_distance_wspeed))) as wspeed,
+                    SUM(accidents_weather_data.visibility*(1.0-(accidents_weather_data.distance_from_weather_station/grouped_accidents_weather_data.sum_of_distance_visibility))) as visibility,
+                    SUM(accidents_weather_data.pressure*(1.0-(accidents_weather_data.distance_from_weather_station/grouped_accidents_weather_data.sum_of_distance_pressure))) as pressure,
+                    SUM(accidents_weather_data.risky*(1.0-(accidents_weather_data.distance_from_weather_station/grouped_accidents_weather_data.sum_of_distance_risky))) as risky
+                FROM
+                    accidents_weather_data
+                INNER JOIN
+                    (
+                        SELECT
+                            accident_id,
+                            SUM(
+                                CASE
+                                    WHEN temperature IS NULL THEN NULL
+                                    WHEN temperature IS NOT NULL THEN distance_from_weather_station
+                                END
+                            ) as sum_of_distance_temperature,
+                            SUM(
+                                CASE
+                                    WHEN dewpoint IS NULL THEN NULL
+                                    WHEN dewpoint IS NOT NULL THEN distance_from_weather_station
+                                END
+                            ) as sum_of_distance_dewpoint,
+                            SUM(
+                                CASE
+                                    WHEN humidity IS NULL THEN NULL
+                                    WHEN humidity IS NOT NULL THEN distance_from_weather_station
+                                END
+                            ) as sum_of_distance_humidity,
+                            SUM(
+                                CASE
+                                    WHEN wdirection IS NULL THEN NULL
+                                    WHEN wdirection IS NOT NULL THEN distance_from_weather_station
+                                END
+                            ) as sum_of_distance_wdirection,
+                            SUM(
+                                CASE
+                                    WHEN wspeed IS NULL THEN NULL
+                                    WHEN wspeed IS NOT NULL THEN distance_from_weather_station
+                                END
+                            ) as sum_of_distance_wspeed,
+                            SUM(
+                                CASE
+                                    WHEN visibility IS NULL THEN NULL
+                                    WHEN visibility IS NOT NULL THEN distance_from_weather_station
+                                END
+                            ) as sum_of_distance_visibility,
+                            SUM(
+                                CASE
+                                    WHEN pressure IS NULL THEN NULL
+                                    WHEN pressure IS NOT NULL THEN distance_from_weather_station
+                                END
+                            ) as sum_of_distance_pressure,
+                            SUM(
+                                CASE
+                                    WHEN risky IS NULL THEN NULL
+                                    WHEN risky IS NOT NULL THEN distance_from_weather_station
+                                END
+                            ) as sum_of_distance_risky
+                        FROM
+                            accidents_weather_data
+                        GROUP BY
+                            accident_id
+                    ) grouped_accidents_weather_data
+                ON
+                    grouped_accidents_weather_data.accident_id = accidents_weather_data.accident_id
+                GROUP BY
+                    accidents_weather_data.accident_id
+            ) AS accidents_weather_data_agg
+        INNER JOIN
+            accidents
+        ON
+            accidents.accident_id = accidents_weather_data_agg.accident_id
+        INNER JOIN
+            road_segments
+        ON
+            road_segments.road_segment_id = accidents.road_segment_id
+    """
+
+    # run
+    results = pd.read_sql_query(
+        con=engine,
+        sql=sql_query
+    )
+
+    return results
