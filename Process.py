@@ -10,6 +10,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import geopandas as gpd
+import fiona
 from shapely.geometry import Point, LineString
 from pvlib import solarposition
 import os
@@ -39,13 +40,16 @@ figures = os.path.join(path, 'Figures')
 ################################################################################
 
 # Load the data
-accidents = pd.read_csv(os.path.join(data, 'accidents.csv'), usecols=['NO_SEQ_COLL', 'DT_ACCDN', 'HEURE_ACCDN', 'LOC_X', 'LOC_Y'])
+accidents = gpd.read_file(r'zip://'+os.path.join(data, 'accidents.zip')).to_crs('EPSG:32188')
+
+# Keep relevant columns
+accidents = accidents.loc[:, ['NO_SEQ_COL', 'DT_ACCDN', 'HEURE_ACCD', 'geometry']]
 
 # Rename columns
-accidents = accidents.rename(columns={'NO_SEQ_COLL':'accidentid', 'DT_ACCDN':'date', 'HEURE_ACCDN':'time', 'LOC_X':'longitude', 'LOC_Y':'latitude'})
+accidents = accidents.rename(columns={'NO_SEQ_COL':'accidentid', 'DT_ACCDN':'date', 'HEURE_ACCD':'time'})
 
-# Drop observations for which we do not observe the time or location of the event
-accidents = accidents.loc[accidents.longitude.notna() & accidents.latitude.notna() & (accidents.time != 'Non précisé'), :]
+# Drop observations for which we do not observe the location or time of the event
+accidents = accidents.loc[accidents.geometry.notna() & (accidents.time != 'Non prÃ©cisÃ©'), :]
 
 # Redefine the types of the date and time columns
 accidents.loc[:, 'date'] = pd.to_datetime(accidents.date, infer_datetime_format=True)
@@ -57,10 +61,6 @@ accidents = accidents.drop(['date', 'time'], axis=1)
 accidents.loc[:, 'datetime'] = accidents.datetime.dt.tz_localize('US/Eastern', ambiguous=True, nonexistent='shift_forward')
 accidents.loc[:, 'datetime'] = accidents.datetime.dt.tz_convert(None)
 
-# Convert the data frame to a geo data frame
-accidents = gpd.GeoDataFrame(accidents, crs='EPSG:32188', geometry=gpd.points_from_xy(accidents.longitude, accidents.latitude))
-accidents = accidents.drop(['longitude', 'latitude'], axis=1)
-
 # Reset the data frame's index
 accidents = accidents.reset_index(drop=True)
 
@@ -71,6 +71,24 @@ ax.set_axis_off()
 fig.tight_layout()
 fig.savefig(os.path.join(figures, 'accidents.pdf'), format='pdf')
 plt.close()
+
+################################################################################
+#                                                                              #
+# This section of the script preprocesses the traffic lights data.             #
+#                                                                              #
+################################################################################
+
+# Load the data
+traffic = gpd.read_file(r'zip://'+os.path.join(data, 'traffic.zip')).to_crs('EPSG:32188')
+
+# Keep relevant columns
+traffic = traffic.loc[:, ['INT_NO', 'geometry']]
+
+# Rename columns
+traffic = traffic.rename(columns={'INT_NO':'intersectionid'})
+
+# Reset the data frame's index
+traffic = traffic.reset_index(drop=True)
 
 ################################################################################
 #                                                                              #
@@ -87,8 +105,13 @@ segments = segments.loc[:, ['ID_TRC', 'CLASSE', 'SENS_CIR', 'geometry']]
 # Rename columns
 segments = segments.rename(columns={'ID_TRC':'segmentid', 'CLASSE':'class', 'SENS_CIR':'direction'})
 
-# Find the number of intersections for each segment
+# Find the number of intersections for each road segment
 segments.loc[:, 'intersections'] = gpd.sjoin(segments, segments.loc[:, ['geometry']], how='left', op='intersects').groupby('segmentid', as_index=False).agg({'index_right':'count'}).index_right
+
+# Find the number of traffic lights within 100 meters of each road segment
+df = segments.loc[:, ['segmentid', 'geometry']]
+df.loc[:, 'geometry'] = df.geometry.buffer(100)
+segments.loc[:, 'trafficlights'] = gpd.sjoin(df, traffic.loc[:, ['geometry']], how='left', op='intersects').groupby('segmentid', as_index=False).agg({'index_right':'count'}).index_right
 
 # Redefine the types of each column
 segments = segments.astype({'segmentid':'int64', 'class':'int64', 'direction':'int64', 'intersections':'int64'})
