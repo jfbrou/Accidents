@@ -253,6 +253,7 @@ def get_accidents(
                             accidents
                         WHERE
                             weather_data IS NOT NULL
+                            AND road_segment_id IS NOT NULL
                         ORDER BY
                             index
                         OFFSET
