@@ -169,7 +169,7 @@ positive = gpd.GeoDataFrame(pd.merge(match, segments, how='left'), geometry='geo
 ################################################################################
 
 # Create a data frame of randomly sampled negative examples
-negative = positive.sample(n=4*positive.shape[0], replace=True, random_state=0)
+negative = positive.sample(n=positive.shape[0], replace=True, random_state=0)
 
 # Randomly alter the time of negative examples
 np.random.seed(0)
