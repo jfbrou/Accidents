@@ -228,10 +228,10 @@ def get_accidents(
         SELECT
             accidents.accident_id,
             accidents.datetime as accident_datetime,
-            accidents.geometry as accident_geometry,
+            ST_AsText(accidents.geometry) as accident_geometry,
             road_segments.class as road_segment_class,
             road_segments.direction as road_segment_direction,
-            road_segments.geometry as road_segment_geometry,
+            ST_AsText(road_segments.geometry) as road_segment_geometry,
             accidents_weather_data_agg.temperature,
             accidents_weather_data_agg.dewpoint,
             accidents_weather_data_agg.humidity,
