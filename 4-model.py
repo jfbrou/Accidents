@@ -105,7 +105,7 @@ model.summary()
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
 # Fit the model
-history = model.fit(x=train_XN, y=train_Y, validation_data=(dev_XN, dev_Y), epochs=100, batch_size=128)
+history = model.fit(x=train_XN, y=train_Y, validation_data=(dev_XN, dev_Y), epochs=60, batch_size=128)
 
 # Save the model
 model.save(os.path.join(path, 'model.h5'))

@@ -20,13 +20,13 @@ import db_helper
 accidents_count = db_helper.get_accidents_count()
 
 # processing start index
-road_segments_process_start_index = 59000
-weather_records_process_start_index = 23500
+road_segments_process_start_index = 63300
+weather_records_process_start_index = 25000
 
 def match_with_road_segments():
 
     # nbr of accidents per process batch
-    nbr_accidents_in_batch = 100
+    nbr_accidents_in_batch = 1000
 
     # init index keeping track of what we have processed
     process_index = road_segments_process_start_index
@@ -53,7 +53,7 @@ def match_with_road_segments():
 def match_with_weather_records():
 
     # nbr of accidents per process batch
-    nbr_accidents_in_batch = 100
+    nbr_accidents_in_batch = 500
 
     # init index keeping track of what we have processed
     process_index = weather_records_process_start_index

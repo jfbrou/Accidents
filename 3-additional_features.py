@@ -39,7 +39,7 @@ data_dir_path = os.path.join(path, 'Data')
 
 
 # get the processed accidents
-df = db_helper.get_accidents(LIMIT=10000)
+df = db_helper.get_accidents(LIMIT=25000)
 df['accident_geometry'] = df['accident_geometry'].apply(wkt_loads)
 df['road_segment_geometry'] = df['road_segment_geometry'].apply(wkt_loads)
 df = gpd.GeoDataFrame(df)
@@ -133,7 +133,7 @@ df.loc[:, 'azimuth'] = dfsolar.azimuth.values
 ################################################################################
 
 # Create a data frame of randomly sampled negative examples
-negative = df.sample(n=df.shape[0], replace=True, random_state=0)
+negative = df.sample(n=2*df.shape[0], replace=True, random_state=0)
 
 # Randomly alter the time of negative examples
 np.random.seed(0)
@@ -164,11 +164,6 @@ df = df.append(negative, ignore_index=True)
 df.loc[:, 'duplicate'] = df.duplicated(keep=False)
 df = df.loc[(df.duplicate == False) | (df.accident == 1), :].drop('duplicate', axis=1)
 
-# log
-print("Length of set : ", len(df))
-print("Number of positives : ", len(df.loc[df['accident'] == 1]))
-print("Number of negatives : ", len(df.loc[df['accident'] == 0]))
-
 ################################################################################
 #                                                                              #
 # This section of the script saves the data frame.                             #
@@ -177,6 +172,18 @@ print("Number of negatives : ", len(df.loc[df['accident'] == 0]))
 
 # remove geometry
 df = df.loc[:, df.columns[~df.columns.isin(['accident_geometry', 'road_segment_geometry'])]]
+
+# remove nan
+df = df.dropna()
+
+# balance the classes
+g = df.groupby('accident')
+df = g.apply(lambda x: x.sample(g.size().min()).reset_index(drop=True))
+
+# log
+print("Length of set : ", len(df))
+print("Number of positives : ", len(df.loc[df['accident'] == 1]))
+print("Number of negatives : ", len(df.loc[df['accident'] == 0]))
 
 # Save the data
 df.to_csv(os.path.join(data_dir_path, 'data.csv'), index=False)
