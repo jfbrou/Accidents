@@ -2,8 +2,8 @@
 
 Our aim is to produce the best real-time, practical risk model for car accidents in Montreal.
 
-![Accuracy](./Figure_1.png)
-![Loss](./Figure_2.png)
+![Accuracy](./Figures/accuracy.png)
+![Loss](./Figures/loss.png)
 
 ## Environment
 

@@ -24,19 +24,27 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import confusion_matrix
 
+
+# Find the current working directory
+path = os.getcwd()
+
+# Grab path to data folder
+if os.path.isdir(os.path.join(path, 'Data')) == False:
+    raise Exception('Data directory does not exist, run retrieve script')
+data_dir_path = os.path.join(path, 'Data')
+
+# Grab path to figures folder
+if os.path.isdir(os.path.join(path, 'Figures')) == False:
+    os.mkdir('Figures')
+figures_dir_path = os.path.join(path, 'Figures')
+
+
 ################################################################################
 #                                                                              #
 #                        Loading the data from the DB                          #
 #                                                                              #
 ################################################################################
 
-# Find the current working directory
-path = os.getcwd()
-
-# Create a folder that contains all data files
-if os.path.isdir(os.path.join(path, 'Data')) == False:
-    raise Exception('Data directory does not exist, run retrieve script')
-data_dir_path = os.path.join(path, 'Data')
 
 # Load the data
 df = pd.read_csv(os.path.join(data_dir_path, 'data.csv'))
@@ -103,7 +111,7 @@ model.summary()
 model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
 # Fit the model
-history = model.fit(x=train_XN, y=train_Y, validation_data=(dev_XN, dev_Y), epochs=10, batch_size=128)
+history = model.fit(x=train_XN, y=train_Y, validation_data=(dev_XN, dev_Y), epochs=4, batch_size=128)
 
 # Save the model
 model.save(os.path.join(path, 'model.h5'))
@@ -131,7 +139,7 @@ plt.title('model accuracy')
 plt.ylabel('accuracy')
 plt.xlabel('epoch')
 plt.legend(['train', 'test'], loc='upper left')
-plt.show()
+plt.savefig(os.path.join(figures_dir_path, 'accuracy.png'))
 
 # summarize history for loss
 plt.plot(history.history['loss'])
@@ -139,4 +147,4 @@ plt.title('model loss')
 plt.ylabel('loss')
 plt.xlabel('epoch')
 plt.legend(['train', 'test'], loc='upper left')
-plt.show()
+plt.savefig(os.path.join(figures_dir_path, 'loss.png'))
