@@ -180,7 +180,8 @@ def get_imagery(
         # start export task
         task = ee.batch.Export.image.toDrive(**{
             'image': clipped_img,
-            'folder':'gis'
+            'folder':'gis',
+            'scale': 10
         })
         task.start()
 

@@ -38,7 +38,7 @@ figures_dir_path = os.path.join(path, 'Figures')
 corners = [-73.812302, 45.402782, -73.551460, 45.673703]
 
 # grab url of imagery
-url = gee_helper.get_imagery(
+gee_helper.get_imagery(
     corners,
     FILTER_DATE='2020-01-01',
     FILTER_DATE_RADIUS_DAYS=60,
