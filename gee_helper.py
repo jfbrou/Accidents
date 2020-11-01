@@ -34,22 +34,23 @@ def humansize(nbytes):
     return '%s %s' % (f, suffixes[i])
 
 
-def return_ee_geometry(geometry):
+def envelope_polygon_to_corners(geometry):
     """
-        Takes a single feature as input and returns the google earth geometry
+        Takes an envelope polygon as input and returns the corners
     """
 
     # cast as str
     geometry = str(geometry)
 
     # parse
-    geometry = geometry.split('(')[-1]
-    geometry = geometry.replace(')', '')
+    geometry = geometry.replace('POLYGON((', '')
+    geometry = geometry.replace('))', '')
     geometry = geometry.strip()
 
     # split points
     points = geometry.split(',')
-    print(f'Number of points: {len(points)}')
+    if(len(points) != 5):
+        raise Exception('Envelope Polygon provided as input is invalid')
 
     # go through
     clean = []
@@ -64,11 +65,19 @@ def return_ee_geometry(geometry):
         else:
             print(f'ERROR: Not a tuple ({pt})')
 
-    return clean
+    # grab corners
+    MIN_X = clean[0][0]
+    MIN_Y = clean[0][1]
+
+    MAX_X = clean[2][0]
+    MAX_Y = clean[2][1]
+
+    return [MIN_X, MIN_Y, MAX_X, MAX_Y]
+
 
 
 def get_imagery(
-        ROI_GEOMETRY,
+        ROI_GEOMETRY_RECT,
         DATE_LOWER_BOUND='2019-07-21',
         DATE_UPPER_BOUND='2019-08-01',
         IMAGE_COLLECTION='LANDSAT/LC08/C01/T1',
@@ -76,8 +85,12 @@ def get_imagery(
         MAX_CLOUD_COVER=10
     ):
 
+    # Print roi area in square kilometers.
+    ROIarea = ROI_GEOMETRY_RECT.area().divide(1000 * 1000).getInfo()
+    print(f'ROI area : {ROIarea} km^2')
+
     #Public Image Collections
-    results = ee.ImageCollection(IMAGE_COLLECTION).filterDate(DATE_LOWER_BOUND, DATE_UPPER_BOUND).filterBounds(ROI_GEOMETRY).filterMetadata('CLOUD_COVER','less_than', MAX_CLOUD_COVER)
+    results = ee.ImageCollection(IMAGE_COLLECTION).filterDate(DATE_LOWER_BOUND, DATE_UPPER_BOUND).filterBounds(ROI_GEOMETRY_RECT).filterMetadata('CLOUD_COVER','less_than', MAX_CLOUD_COVER)
 
     # Get collection size
     print('Total number of assets with filters: '+str(results.size().getInfo()))
@@ -130,7 +143,7 @@ def get_imagery(
     pp.pprint(sample_image.getInfo())
 
     # clip
-    clipped_img = sample_image.clip(ROI_GEOMETRY)
+    clipped_img = sample_image.clip(ROI_GEOMETRY_RECT)
 
     # get url
     asset_url = clipped_img.getDownloadURL()
@@ -165,15 +178,14 @@ def download_asset(url, filename):
 
 
 # Test
-feature = 'LINESTRING(288690.550115 5043101.721475,288685.92721 5043096.320675,288654.88053 5043060.83725,288653.173125 5043058.62705,288651.993625 5043056.65685,288651.48224 5043055.276725,288650.93785 5043053.0165,288650.896585 5043050.226225,288651.193525 5043048.50605,288651.57296 5043047.145925,288652.636995 5043044.8057,288653.88247 5043043.045525,288709.49264 5042991.570575,288713.31989 5042988.31025,288714.59837 5042987.570175,288717.26257 5042986.610075,288719.38427 5042986.3438,288722.49199 5042986.390075,288723.902455 5042986.7001,288726.632665 5042987.8602,288727.74619 5042988.570275,288729.931975 5042990.41045,288765.391525 5043023.293625,288769.90565 5043028.6914)'
-feature = return_ee_geometry(feature)
+envelope_polygon = 'POLYGON((-73.7068029846723 45.5265622667585,-73.7068071182513 45.5276903170224,-73.705155796456 45.5276932946443,-73.7051516958824 45.5265652442639,-73.7068029846723 45.5265622667585))'
+corners = envelope_polygon_to_corners(envelope_polygon)
 
 # Production of rectangle limiting ROI - it's a ee.geometry defined from coordinates and staying in the GEE.
-#ROIgeometry = ee.Geometry.Polygon(feature)
-ROIgeometry = ee.Geometry.LineString(feature)
+ROIgeometry = ee.Geometry.Rectangle(coords=corners, proj='EPSG:4326')
 
 # grab url of imagery
 url = get_imagery(ROIgeometry, INTEREST_BANDS=['B3', 'B2'])
 
 # download
-download_asset(url, 'mtl-feature')
+#download_asset(url, 'mtl-feature')

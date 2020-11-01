@@ -60,7 +60,7 @@ df = g.apply(lambda x: x.sample(g.size().min()).reset_index(drop=True))
 print(df['accident'].value_counts())
 
 # Keep certain columns
-X = df.loc[:, df.columns[~df.columns.isin(['accident_datetime', 'accident_geometry', 'road_segment_geometry', 'accident_id', 'accident'])]]
+X = df.loc[:, df.columns[~df.columns.isin(['accident_id', 'accident', 'accident_datetime', 'accident_geometry', 'road_segment_id', 'road_segment_geometry', 'road_segment_envelope_geometry'])]]
 Y = df.loc[:, 'accident']
 
 # Split the data into training, development and test sets

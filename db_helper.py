@@ -217,10 +217,11 @@ def get_accidents_count():
 
 def get_accidents(
         OFFSET=0,
-        LIMIT=1000
+        LIMIT=1000,
+        ENVELOPE_BUFFER_IN_M=5
     ):
     """
-        Returns the accidents with joined data
+        Returns the accidents with joined data. Geometries are returned as text with crs = ESPG:4326
     """
 
     # SQL Query
@@ -228,10 +229,12 @@ def get_accidents(
         SELECT
             accidents.accident_id,
             accidents.datetime as accident_datetime,
-            ST_AsText(accidents.geometry) as accident_geometry,
+            ST_AsText(ST_Transform(accidents.geometry, 4326)) as accident_geometry,
+            road_segments.road_segment_id as road_segment_id,
             road_segments.class as road_segment_class,
             road_segments.direction as road_segment_direction,
-            ST_AsText(road_segments.geometry) as road_segment_geometry,
+            ST_AsText(ST_Transform(road_segments.geometry, 4326)) as road_segment_geometry,
+            ST_AsText(ST_Transform(ST_Envelope(ST_Buffer(road_segments.geometry, {ENVELOPE_BUFFER_IN_M})), 4326)) as road_segment_envelope_geometry,
             accidents_weather_data_agg.temperature,
             accidents_weather_data_agg.dewpoint,
             accidents_weather_data_agg.humidity,
