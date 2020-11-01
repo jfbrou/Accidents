@@ -53,6 +53,10 @@ for index, row in df.iterrows():
     road_segment_bbox = row['road_segment_bbox']
     accident_datetime = row['accident_datetime']
 
+    # grab corners of bbox
+    corners = gee_helper.bbox_to_corners(road_segment_bbox)
+    print(corners)
+
     # get current datetime
     now = datetime.now()
     current_year = now.year
@@ -64,9 +68,6 @@ for index, row in df.iterrows():
     if(adjust_year < 2017):
         adjust_year = 2017
         datetime_obj = datetime_obj.replace(year=adjust_year)
-
-    # grab corners of bbox
-    corners = gee_helper.bbox_to_corners(road_segment_bbox)
 
     # if cant find assets for date looks at the next year for the ~same month
     url = None

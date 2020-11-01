@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timedelta
+import time
 
 from io import BytesIO
 import requests
@@ -90,7 +91,8 @@ def get_imagery(
         IMAGE_COLLECTION='COPERNICUS/S2_SR',
         INTEREST_BANDS=['B4', 'B3', 'B2'],
         MAX_CLOUD_COVER=20,
-        MAX_VISUALIZE_INTENSITY=5000
+        MAX_VISUALIZE_INTENSITY=5000,
+        EXPORT_TO_DRIVE=False
     ):
 
     # check inputs
@@ -171,6 +173,23 @@ def get_imagery(
     clipped_img = img_visualized.clipToBoundsAndScale(
         geometry=ROI_GEOMETRY_RECT
     )
+
+    # if export to drive
+    if EXPORT_TO_DRIVE:
+
+        # start export task
+        task = ee.batch.Export.image.toDrive(**{
+            'image': clipped_img,
+            'folder':'gis'
+        })
+        task.start()
+
+        # check on task
+        while task.active():
+            print('Polling for task (id: {}).'.format(task.id))
+            time.sleep(5)
+
+        return None
 
     # get url
     asset_url = clipped_img.getDownloadURL()
