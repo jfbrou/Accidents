@@ -114,9 +114,16 @@ evaluation = model.evaluate(x=test_XN, y=test_Y)
 # Create the confusion matrix
 prediction = (model.predict(test_XN) > 0.5).astype("int32")
 confusion = confusion_matrix(test_Y, prediction, labels=[0,1], normalize='all')
-print('  0   |   1   ')
-for [score_0, score_1] in confusion:
-    print(f'{np.round(score_0, 3)} | {np.round(score_1, 3)}')
+tn = np.round(confusion[0][0], 4)
+fn = np.round(confusion[1][0], 4)
+tp = np.round(confusion[1][1], 4)
+fp = np.round(confusion[0][1], 4)
+recall = np.round(tp/(tp+fn), 4)
+print(f'True Negative : {tn}')
+print(f'False Negative : {fn}')
+print(f'True Positives : {tp}')
+print(f'False Positives : {fp}')
+print(f'Recall : {recall}')
 
 # summarize history for accuracy
 plt.plot(history.history['accuracy'])
