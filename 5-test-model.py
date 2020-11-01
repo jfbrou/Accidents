@@ -65,48 +65,14 @@ train_XN = scaler.fit_transform(train_X)
 dev_XN = scaler.transform(dev_X)
 test_XN = scaler.transform(test_X)
 
-# print features
-for i, feature in enumerate(train_X.columns):
-    print(f'Feature #{i} : {feature}')
-
-
 ################################################################################
 #                                                                              #
-# This section of the script defines, compiles and trains the model.           #
+# Test Model.                                                                  #
 #                                                                              #
 ################################################################################
 
-
-# Define the model instance
-model = Sequential()
-model.add(Dense(256, input_dim=train_XN.shape[1], activation='relu'))
-model.add(BatchNormalization())
-model.add(Dropout(0.5))
-model.add(Dense(256, activation='relu'))
-model.add(BatchNormalization())
-model.add(Dropout(0.4))
-model.add(Dense(128, activation='relu'))
-model.add(BatchNormalization())
-model.add(Dropout(0.3))
-model.add(Dense(128, activation='relu'))
-model.add(BatchNormalization())
-model.add(Dropout(0.2))
-model.add(Dense(64, activation='relu'))
-model.add(BatchNormalization())
-model.add(Dropout(0.1))
-model.add(Dense(32, activation='relu'))
-model.add(BatchNormalization())
-model.add(Dense(1, activation='sigmoid'))
-model.summary()
-
-# Compile the model
-model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
-
-# Fit the model
-history = model.fit(x=train_XN, y=train_Y, validation_data=(dev_XN, dev_Y), epochs=10, batch_size=128)
-
-# Save the model
-model.save(os.path.join(path, 'model.h5'))
+# load model
+model = load_model('model.h5')
 
 # Evaluate the model
 evaluation = model.evaluate(x=test_XN, y=test_Y)
@@ -117,19 +83,3 @@ confusion = confusion_matrix(test_Y, prediction, labels=[0,1], normalize='all')
 print('  0   |   1   ')
 for [score_0, score_1] in confusion:
     print(f'{np.round(score_0, 3)} | {np.round(score_1, 3)}')
-
-# summarize history for accuracy
-plt.plot(history.history['accuracy'])
-plt.title('model accuracy')
-plt.ylabel('accuracy')
-plt.xlabel('epoch')
-plt.legend(['train', 'test'], loc='upper left')
-plt.show()
-
-# summarize history for loss
-plt.plot(history.history['loss'])
-plt.title('model loss')
-plt.ylabel('loss')
-plt.xlabel('epoch')
-plt.legend(['train', 'test'], loc='upper left')
-plt.show()
