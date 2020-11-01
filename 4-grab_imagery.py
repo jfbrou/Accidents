@@ -1,7 +1,7 @@
 
 # Import libraries
 import os
-import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -53,14 +53,37 @@ for index, row in df.iterrows():
     road_segment_bbox = row['road_segment_bbox']
     accident_datetime = row['accident_datetime']
 
-    # prompt
-    print(f'Fetching {accident_id}')
+    # get current datetime
+    now = datetime.now()
+    current_year = now.year
+
+    # get datetime
+    dateformat = '%Y-%m-%d %H:%M:%S'
+    datetime_obj = datetime.strptime(accident_datetime, dateformat)
+    adjust_year = datetime_obj.year
+    if(adjust_year < 2017):
+        adjust_year = 2017
+        datetime_obj = datetime_obj.replace(year=adjust_year)
 
     # grab corners of bbox
     corners = gee_helper.bbox_to_corners(road_segment_bbox)
 
-    # grab url of imagery
-    url = gee_helper.get_imagery(corners)
+    # if cant find assets for date looks at the next year for the ~same month
+    url = None
+    while(url is None or adjust_year > current_year):
+
+        # set time window
+        date_target = datetime_obj.strftime('%Y-%m-%d')
+
+        # prompt
+        print(f'Fetching {accident_id} - {date_target}')
+
+        # grab url of imagery
+        url = gee_helper.get_imagery(corners, FILTER_DATE=date_target, FILTER_DATE_RADIUS_DAYS=30)
+
+        # increment year
+        adjust_year += 1
+        datetime_obj = datetime_obj.replace(year=adjust_year)
 
     # outpath
     outpath = str(accident_id) + "_" + str(road_segment_id)

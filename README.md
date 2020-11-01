@@ -96,6 +96,12 @@ To setup the PostGIS extension on AWS RDS, here is the [article](https://docs.aw
     )
 
 
+## Satellite Images
+
+We use,
+
+    https://developers.google.com/earth-engine/datasets/catalog/COPERNICUS_S2_SR
+
 
 ## Data Features for training
 

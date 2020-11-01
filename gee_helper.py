@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from io import BytesIO
 import requests
@@ -85,8 +85,8 @@ def bbox_to_corners(geometry):
 
 def get_imagery(
         BBOX_CORNERS,
-        DATE_LOWER_BOUND='2015-02-01',
-        DATE_UPPER_BOUND='2020-09-01',
+        FILTER_DATE='2017-03-01',
+        FILTER_DATE_RADIUS_DAYS=30,
         IMAGE_COLLECTION='COPERNICUS/S2_SR',
         INTEREST_BANDS=['B4', 'B3', 'B2'],
         MAX_CLOUD_COVER=20,
@@ -104,8 +104,24 @@ def get_imagery(
     ROIarea = ROI_GEOMETRY_RECT.area().divide(1000 * 1000).getInfo()
     print(f'ROI area : {ROIarea} km^2')
 
+    # convert input to datetime window
+    dateformat = '%Y-%m-%d'
+    datetime_obj = datetime.strptime(FILTER_DATE, dateformat)
+
+    # make sure date year is > 2017 (Sentinel lower bound)
+    adjust_year = datetime_obj.year
+    if(adjust_year < 2017):
+        adjust_year = 2017
+        datetime_obj = datetime_obj.replace(year=adjust_year)
+
+    # set time window
+    datemin = datetime_obj - timedelta(days=FILTER_DATE_RADIUS_DAYS)
+    datemax = datetime_obj + timedelta(days=FILTER_DATE_RADIUS_DAYS)
+    datemin_str = datemin.strftime(dateformat)
+    datemax_str = datemax.strftime(dateformat)
+
     #Public Image Collections
-    results = ee.ImageCollection(IMAGE_COLLECTION).filterDate(DATE_LOWER_BOUND, DATE_UPPER_BOUND).filterBounds(ROI_GEOMETRY_RECT).filterMetadata('CLOUDY_PIXEL_PERCENTAGE','less_than', MAX_CLOUD_COVER)
+    results = ee.ImageCollection(IMAGE_COLLECTION).filterDate(datemin_str, datemax_str).filterBounds(ROI_GEOMETRY_RECT).filterMetadata('CLOUDY_PIXEL_PERCENTAGE','less_than', MAX_CLOUD_COVER)
 
     # Get collection size
     assets_count = results.size().getInfo()
