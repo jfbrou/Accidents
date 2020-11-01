@@ -218,7 +218,7 @@ def get_accidents_count():
 def get_accidents(
         OFFSET=0,
         LIMIT=1000,
-        ENVELOPE_BUFFER_IN_M=5
+        BBOX_BUFFER=200
     ):
     """
         Returns the accidents with joined data. Geometries are returned as text with crs = ESPG:4326
@@ -234,7 +234,7 @@ def get_accidents(
             road_segments.class as road_segment_class,
             road_segments.direction as road_segment_direction,
             ST_AsText(ST_Transform(road_segments.geometry, 4326)) as road_segment_geometry,
-            ST_AsText(ST_Transform(ST_Envelope(ST_Buffer(road_segments.geometry, {ENVELOPE_BUFFER_IN_M})), 4326)) as road_segment_envelope_geometry,
+            Box2D(ST_Transform(ST_Buffer(road_segments.geometry, {BBOX_BUFFER}), 4326)) as road_segment_bbox,
             accidents_weather_data_agg.temperature,
             accidents_weather_data_agg.dewpoint,
             accidents_weather_data_agg.humidity,

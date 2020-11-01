@@ -39,7 +39,7 @@ data_dir_path = os.path.join(path, 'Data')
 
 
 # get the processed accidents
-df = db_helper.get_accidents(LIMIT=60000)
+df = db_helper.get_accidents(LIMIT=63500)
 df['accident_geometry'] = df['accident_geometry'].apply(wkt_loads)
 df['road_segment_geometry'] = df['road_segment_geometry'].apply(wkt_loads)
 df = gpd.GeoDataFrame(df)
@@ -170,7 +170,7 @@ df = df.loc[(df.duplicate == False) | (df.accident == 1), :].drop('duplicate', a
 #                                                                              #
 ################################################################################
 
-# remove road segment raw geometry (we keep road_segment_envelope_geometry)
+# remove road segment raw geometry (we keep road_segment_bbox)
 df = df.loc[:, df.columns[~df.columns.isin(['road_segment_geometry'])]]
 
 # remove nan
