@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 import geopandas as gpd
 
+from shapely.wkt import loads as wkt_loads
+
 from sqlalchemy import create_engine
 
 # Set up database connection engine
@@ -376,5 +378,12 @@ def get_accidents(
         con=engine,
         sql=sql_query
     )
+
+    # parse geometries
+    results['accident_geometry'] = results['accident_geometry'].apply(wkt_loads)
+    results['road_segment_geometry'] = results['road_segment_geometry'].apply(wkt_loads)
+
+    # convert to geodataframe
+    results = gpd.GeoDataFrame(results)
 
     return results

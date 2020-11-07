@@ -11,7 +11,6 @@ import datetime
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-from shapely.wkt import loads as wkt_loads
 
 from pvlib import solarposition
 
@@ -40,9 +39,6 @@ data_dir_path = os.path.join(path, 'Data')
 
 # get the processed accidents
 df = db_helper.get_accidents(LIMIT=63500)
-df['accident_geometry'] = df['accident_geometry'].apply(wkt_loads)
-df['road_segment_geometry'] = df['road_segment_geometry'].apply(wkt_loads)
-df = gpd.GeoDataFrame(df)
 
 
 ################################################################################
