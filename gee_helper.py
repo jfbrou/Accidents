@@ -16,7 +16,7 @@ import numpy as np
 import pprint
 pp = pprint.PrettyPrinter(depth=4)
 
-#ee.Authenticate()
+# init earth engine
 ee.Initialize()
 
 # Find the current working directory
