@@ -50,7 +50,7 @@ train_X, dev_X, train_Y, dev_Y = train_test_split(train_X, train_Y, test_size=0.
 # Normalize the data
 scaler = StandardScaler()
 train_XN = scaler.fit_transform(train_X)
-dev_XN = scaler.fit_transform(dev_X)
+dev_XN = scaler.transform(dev_X)
 test_XN = scaler.transform(test_X)
 
 ################################################################################
@@ -77,8 +77,6 @@ model.add(Dense(64, activation='relu'))
 model.add(BatchNormalization())
 model.add(Dropout(0.1))
 model.add(Dense(32, activation='relu'))
-model.add(BatchNormalization())
-model.add(Dense(1, activation='sigmoid'))
 model.summary()
 
 # Compile the model
